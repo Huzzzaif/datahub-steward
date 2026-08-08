@@ -56,7 +56,9 @@ uv run steward seed
 uv run steward parity
 
 # 4. Ask something
-export ANTHROPIC_API_KEY=sk-ant-...
+# Optional: use Claude instead of the free local model
+# export STEWARD_PROVIDER=anthropic
+# export ANTHROPIC_API_KEY=sk-ant-...
 uv run steward blast "We want to rename raw.stripe.charges.amount_cents to \
 amount_minor_units and change its type to VARCHAR. What breaks?"
 
@@ -141,7 +143,9 @@ uv run steward parity  # requires a running DataHub
 | Seeder (15 entities) | Verified |
 | Fake ↔ live parity | Verified via `steward parity` |
 | Test suite | 13 passing |
-| Agent reasoning loop | **Not yet run** — needs `ANTHROPIC_API_KEY` |
+| Agent crew on free local llama3.1:8b | Verified — cold run 12 entities / 515 tokens / 4.3s |
+| Knowledge compounding | Verified — second run 1 entity / 0 tokens / 0.37s |
+| Anthropic provider | Implemented, not exercised (no key on this machine) |
 
 ## Licence
 
