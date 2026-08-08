@@ -1,0 +1,35 @@
+[project]
+name = "steward"
+version = "0.1.0"
+description = "DataHub agents whose findings compound in the catalog"
+readme = "README.md"
+authors = [
+    { name = "huzzzaif", email = "huzaiffkhhan@gmail.com" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.12"
+dependencies = [
+    "acryl-datahub>=1.7",
+    "anthropic>=0.121.0",
+    "httpx>=0.28.1",
+]
+
+[project.scripts]
+steward = "steward.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.2,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    # The new datahub.sdk package warns on import; we deliberately don't use it.
+    "ignore::UserWarning:datahub.*",
+]

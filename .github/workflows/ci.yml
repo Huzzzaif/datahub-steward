@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      # The Catalog protocol + FakeCatalog mean the whole suite runs with no
+      # DataHub, no Docker, no network and no API key.
+      - name: Test
+        run: uv run pytest
+
+      - name: Import check
+        run: uv run python -c "import steward.cli, steward.agent, steward.adapter, steward.seed"
