@@ -59,6 +59,17 @@ _ENTITY_FIELDS = """
     }
 """
 
+# Ownership resolves to the same concrete type on every entity, so unlike
+# `properties` it merges across fragments without aliasing. Requested during
+# lineage traversal because "who do I have to talk to" is the answer a human
+# actually needs, and fetching it per-entity afterwards would be N extra calls.
+_OWNER_FIELDS = """
+    ... on Dataset { ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } } }
+    ... on Dashboard { ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } } }
+    ... on MLModel { ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } } }
+    ... on DataJob { ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } } }
+"""
+
 _DETAIL_FIELDS = """
     ... on Dataset {
       ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } }
@@ -93,11 +104,11 @@ query stewardLineage($urn: String!, $direction: LineageDirection!, $count: Int!,
     total
     searchResults {
       degree
-      entity { urn type __ENTITY_FIELDS__ }
+      entity { urn type __ENTITY_FIELDS__ __OWNER_FIELDS__ }
     }
   }
 }
-""".replace("__ENTITY_FIELDS__", _ENTITY_FIELDS)
+""".replace("__ENTITY_FIELDS__", _ENTITY_FIELDS).replace("__OWNER_FIELDS__", _OWNER_FIELDS)
 
 _ENTITY_QUERY = """
 query stewardEntity($urn: String!) {

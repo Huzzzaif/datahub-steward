@@ -16,6 +16,8 @@ import sys
 from . import scenario as s
 from .adapter import DataHubAdapter
 from .agent import blast_radius_agent, root_cause_agent
+from .crew import BlastRadiusCrew
+from .llm import build_provider
 from .catalog import Catalog
 from .config import Config
 from .fake import FakeCatalog
@@ -89,21 +91,46 @@ def cmd_parity(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
-def _run_agent(kind: str, question: str, use_fake: bool) -> int:
+def _check_provider(config: Config) -> None:
+    """Fail early and helpfully rather than deep inside a tool loop."""
+    provider = build_provider(config)
+    check = getattr(provider, "available", None)
+    if check is None:
+        return
+    ok, why = check()
+    if not ok:
+        sys.exit(why)
+
+
+def _run_agent(kind: str, question: str, use_fake: bool, single: bool) -> int:
+    config = Config.from_env()
+    _check_provider(config)
     catalog = _catalog(use_fake)
-    agent = (blast_radius_agent if kind == "blast" else root_cause_agent)(catalog)
+
+    # The crew is the default because it holds up on a small local model; the
+    # single free-form agent is better on a frontier one.
+    if kind == "blast" and not single:
+        result = BlastRadiusCrew(catalog, config).run(question)
+        for stage in result.trace:
+            print(f"  · {stage.name}: {stage.detail}")
+        print()
+        print(result.answer)
+        _print_stats(f"{kind} crew ({config.provider})", result.stats)
+        return 0
+
+    agent = (blast_radius_agent if kind == "blast" else root_cause_agent)(catalog, config)
     result = agent.run(question)
     print(result.answer)
-    _print_stats(kind, result.stats)
+    _print_stats(f"{kind} ({config.provider})", result.stats)
     return 0
 
 
 def cmd_blast(args: argparse.Namespace) -> int:
-    return _run_agent("blast", args.question, args.fake)
+    return _run_agent("blast", args.question, args.fake, getattr(args, "single", False))
 
 
 def cmd_cause(args: argparse.Namespace) -> int:
-    return _run_agent("cause", args.question, args.fake)
+    return _run_agent("cause", args.question, args.fake, single=True)
 
 
 def cmd_demo(args: argparse.Namespace) -> int:
@@ -113,22 +140,27 @@ def cmd_demo(args: argparse.Namespace) -> int:
     catalog that now contains run one's finding — and the instrumentation shows
     it doing less work to get there.
     """
+    config = Config.from_env()
+    _check_provider(config)
     catalog = _catalog(args.fake)
 
     print("=" * 72)
     print("RUN 1 — cold catalog, nothing recorded yet")
     print("=" * 72)
-    first = blast_radius_agent(catalog).run(s.DEMO_CHANGE)
+    first = BlastRadiusCrew(catalog, config).run(s.DEMO_CHANGE)
+    for stage in first.trace:
+        print(f"  · {stage.name}: {stage.detail}")
+    print()
     print(first.answer)
     _print_stats("run 1", first.stats)
 
     print("\n" + "=" * 72)
-    print("RUN 2 — same catalog, now carrying run 1's finding")
+    print("RUN 2 — same question, catalog now carries run 1's finding")
     print("=" * 72)
-    second = root_cause_agent(catalog).run(
-        "The churn_predictor model's scores shifted sharply last night. "
-        "The payments team mentioned they were changing something. What happened?"
-    )
+    second = BlastRadiusCrew(catalog, config).run(s.DEMO_CHANGE)
+    for stage in second.trace:
+        print(f"  · {stage.name}: {stage.detail}")
+    print()
     print(second.answer)
     _print_stats("run 2", second.stats)
 
@@ -165,7 +197,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("parity", help="check the fake matches live DataHub").set_defaults(
         func=cmd_parity, fake=False
     )
-    add("blast", cmd_blast, "what breaks if I make this change?", needs_question=True)
+    blast = add("blast", cmd_blast, "what breaks if I make this change?", needs_question=True)
+    blast.add_argument(
+        "--single",
+        action="store_true",
+        help="use the single free-form agent instead of the crew",
+    )
     add("cause", cmd_cause, "why is this broken?", needs_question=True)
     add("demo", cmd_demo, "two-run knowledge-compounding demo")
 
