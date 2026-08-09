@@ -145,11 +145,34 @@ class TestRootCauseCrew:
         assert s.DASH_REVENUE not in result.finding.evidence_urns
 
     def test_falls_back_to_source_first_ordering(self, catalog: FakeCatalog) -> None:
-        crew = RootCauseCrew(catalog, _config(), provider=StubProvider(["0", "nonsense", ""]))
+        # DEMO_SYMPTOM names churn_predictor outright, so resolve is decided in
+        # code and consumes no model reply — the first stub reply reaches `rank`.
+        crew = RootCauseCrew(catalog, _config(), provider=StubProvider(["nonsense", ""]))
         result = crew.run(s.DEMO_SYMPTOM)
 
         assert result.finding is not None
         assert "raw." in result.finding.title or "raw." in result.finding.body
+
+    def test_a_named_entity_is_resolved_without_asking_the_model(
+        self, catalog: FakeCatalog
+    ) -> None:
+        provider = StubProvider(["99", "0", "note"])
+        result = RootCauseCrew(catalog, _config(), provider=provider).run(s.DEMO_SYMPTOM)
+
+        assert result.finding is not None
+        assert result.finding.subject_urn == s.MODEL_CHURN
+        assert any("named directly" in st.detail for st in result.trace)
+
+    def test_an_echoed_full_list_is_not_treated_as_a_ranking(
+        self, catalog: FakeCatalog
+    ) -> None:
+        # Ten upstream entities handed straight back in order is the list, not a
+        # ranking, and must not decide the "leading candidate".
+        echo = ",".join(str(i) for i in range(10))
+        crew = RootCauseCrew(catalog, _config(), provider=StubProvider([echo, "note"]))
+        result = crew.run(s.DEMO_SYMPTOM)
+
+        assert any("not a ranking" in st.detail for st in result.trace)
 
 
 class TestExpandedScenario:

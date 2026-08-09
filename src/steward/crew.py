@@ -73,6 +73,25 @@ def _first_index(reply: str, ceiling: int) -> int | None:
     return None
 
 
+def _named_entity(question: str, options: list[Entity]) -> Entity | None:
+    """The entity the question names verbatim, if exactly one does.
+
+    Deterministic on purpose. Substring matching beats any prompt here: when
+    someone writes "churn_predictor", no amount of model judgment improves on
+    taking them at their word.
+    """
+    haystack = question.lower()
+    hits = [e for e in options if len(e.name) > 3 and e.name.lower() in haystack]
+    if not hits:
+        return None
+    # Longest name wins, so "analytics.features.customer_features" is preferred
+    # over a shorter name that happens to be a substring of it.
+    hits.sort(key=lambda e: len(e.name), reverse=True)
+    if len(hits) > 1 and len(hits[0].name) == len(hits[1].name):
+        return None  # genuinely ambiguous — let the model choose
+    return hits[0]
+
+
 def _all_indices(reply: str, ceiling: int) -> list[int]:
     seen: list[int] = []
     for token in re.findall(r"\d+", reply):
@@ -138,6 +157,14 @@ class _CrewBase:
         if len(options) == 1:
             self._emit(trace, Stage("resolve", f"only candidate: {options[0].name}"))
             return options[0]
+
+        # If the question names an entity outright, that is not a judgment call
+        # and the model doesn't get a vote. Asking anyway is how a run about
+        # churn_predictor ends up filed against customer_features.
+        named = _named_entity(question, options)
+        if named is not None:
+            self._emit(trace, Stage("resolve", f"named directly in the question: {named.name}"))
+            return named
 
         listing = "\n".join(
             f"{i}. {e.name}  ({e.entity_type})" for i, e in enumerate(options)
@@ -209,27 +236,47 @@ class BlastRadiusCrew(_CrewBase):
             for i, e in enumerate(edges)
         )
         reply = self._ask(
-            "You assess data-pipeline risk. Reply with only numbers separated by "
-            "commas. No words, no explanation.",
+            "You assess data-pipeline risk. Reply with at most 5 numbers, "
+            "separated by commas, most important first. No words, no explanation.",
             f"A change is being made to: {subject.name}\n\n"
             f"These assets depend on it:\n{listing}\n\n"
-            "Which are the highest-risk ones to break? Production ML models and "
-            "executive dashboards are highest risk; intermediate tables are lower. "
-            "Reply with just the numbers, most important first.",
+            "Which are the highest-risk to break? Production ML models and "
+            "executive dashboards are highest risk; intermediate tables and jobs "
+            "are lower. Be selective — naming everything is the same as naming "
+            "nothing. Reply with at most 5 numbers, most important first.",
             stats,
         )
 
         picked = [edges[i] for i in _all_indices(reply, len(edges))]
+
+        # A model that flags almost everything has not made a judgment, it has
+        # just echoed the list back. Treat that as no answer rather than
+        # presenting an undifferentiated wall as "high risk".
+        indiscriminate = len(edges) >= 4 and len(picked) >= len(edges) * 0.8
+        if indiscriminate:
+            self._emit(
+                trace,
+                Stage("assess", f"model flagged {len(picked)}/{len(edges)} — not selective, ignoring"),
+            )
+            picked = []
+
         if not picked:
-            # Deterministic fallback: models and dashboards are what people care
+            # Deterministic fallback: terminal consumers are what people care
             # about, so surface those regardless of what the model said.
-            picked = [
-                e for e in edges if e.entity.entity_type in {"MLMODEL", "DASHBOARD"}
-            ]
-            self._emit(trace, Stage("assess", f"model reply unusable; fell back to {len(picked)} terminal consumers"))
+            picked = [e for e in edges if e.entity.entity_type in {"MLMODEL", "DASHBOARD"}]
+            if not indiscriminate:
+                self._emit(
+                    trace,
+                    Stage("assess", f"model reply unusable; fell back to {len(picked)} terminal consumers"),
+                )
         else:
             self._emit(trace, Stage("assess", f"model flagged {len(picked)} high-risk assets"))
-        return picked[:6]
+
+        # Models before dashboards before everything else — a production model
+        # is the headline, and _compose names picked[0] in the title.
+        rank = {"MLMODEL": 0, "DASHBOARD": 1}
+        picked.sort(key=lambda e: (rank.get(e.entity.entity_type, 2), e.degree))
+        return picked[:5]
 
     # -- stage 4: compose ------------------------------------------------
 
@@ -378,17 +425,38 @@ class RootCauseCrew(_CrewBase):
             for i, e in enumerate(edges)
         )
         reply = self._ask(
-            "You rank likely causes of a data incident. Reply with only numbers "
-            "separated by commas, most likely first. No words.",
+            "You rank likely causes of a data incident. Reply with at most 4 "
+            "numbers, separated by commas, most likely first. No words.",
             f"Symptom reported on: {subject.name}\n\n"
-            f"These feed it:\n{listing}\n\n"
-            "Which are the most likely causes? Raw source tables that changed "
-            "are more often the cause than intermediate models. Rank the most "
-            "likely first. Reply with just the numbers.",
+            f"These feed it, with how many hops away each is:\n{listing}\n\n"
+            "Which are the most likely causes of that specific symptom?\n"
+            "- Fewer hops away is more likely: a change 1-2 hops up reaches the "
+            "symptom directly, one 5 hops up is usually diluted or would have "
+            "broken other things first.\n"
+            "- Raw source tables change more often than modelled tables.\n"
+            "- Prefer sources whose subject matter matches the symptom.\n"
+            "Reply with at most 4 numbers, most likely first.",
             stats,
         )
 
-        ranked = [edges[i] for i in _all_indices(reply, len(edges))]
+        indices = _all_indices(reply, len(edges))
+
+        # An echo is returning *everything* in the order given — that is the list
+        # handed back, not a ranking. A short prefix in order is different: the
+        # candidates are sorted nearest-first and the prompt says nearer is more
+        # likely, so "the first four" is a legitimate answer, not a non-answer.
+        echoed = (
+            indices == list(range(len(indices)))
+            and len(indices) >= max(3, len(edges) * 0.8)
+        )
+        if echoed:
+            self._emit(
+                trace,
+                Stage("rank", f"model returned input order for all {len(indices)} — not a ranking, ignoring"),
+            )
+            indices = []
+
+        ranked = [edges[i] for i in indices]
         if not ranked:
             # Deterministic fallback: raw sources first, then by distance. A
             # garbled model reply degrades to a defensible ordering rather than

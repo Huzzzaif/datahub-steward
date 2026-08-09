@@ -44,14 +44,30 @@ So Steward instruments it. Same question, twice:
 
 | | Entities inspected | Tokens | Wall time |
 |---|---|---|---|
-| **Run 1** — cold catalog | 30 | 840 | 9.6s |
-| **Run 2** — after run 1 wrote its finding | 18 | 281 | **1.1s** |
+| **Run 1** — cold catalog | 30 | 571 | 0.7s |
+| **Run 2** — after run 1 wrote its finding | 18 | 281 | **0.3s** |
 
 Run 2 does no traversal and no assessment. It reads what run 1 left in DataHub
 and cites it. The catalog is permanently smarter, and the numbers are on screen
 rather than in a claim.
 
-*(Measured on `llama-3.1-8b` via Ollama against the live DataHub quickstart.)*
+*(Groq `llama-3.3-70b-versatile`. The same runs on local `llama3.1:8b` take 9.6s
+and 1.1s — ~10x slower, same conclusions.)*
+
+## Small models, handled deliberately
+
+The crews are built to run on free models, which means designing around the ways
+they fail rather than hoping they don't:
+
+- **The model never emits an identifier.** It picks an index into a list the code
+  built, so a hallucinated URN is structurally impossible.
+- **A named entity skips the model entirely.** If the question says
+  `churn_predictor`, that's not a judgment call. This was a real bug: a run about
+  the churn model was being filed against a different table.
+- **Non-answers are detected and discarded.** A model that flags 12 of 12 assets
+  as "high risk", or hands the candidate list back in the order it was given, has
+  made no judgment. Both are caught and replaced with a deterministic heuristic.
+- **Every stage has a fallback**, so a garbled reply degrades instead of crashing.
 
 ## The scenario, and why it's the interesting case
 
