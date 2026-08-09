@@ -1,5 +1,20 @@
 # Steward
 
+### ▶ [huzzzaif.github.io/datahub-steward](https://huzzzaif.github.io/datahub-steward/) — try it, nothing to install
+
+**Someone renames one column in the payments table. Four steps later, the AI
+that decides which customers get a discount starts making bad calls — and
+nothing anywhere says the two are connected.**
+
+Steward is a pair of agents that read a DataHub catalogue, work out what a
+change would actually break, and **write the answer back into the catalogue** so
+the next person doesn't have to work it out again.
+
+Ask once: 13 entities inspected, 568 tokens. Ask the same thing again: **1
+entity, 0 tokens** — because the answer is already in DataHub.
+
+---
+
 **DataHub agents whose findings compound.**
 
 Built for *Build with DataHub: The Agent Hackathon* — challenges **#1 (Agents

@@ -2,7 +2,13 @@
 
 **Challenges: #1 (Agents That Do Real Work) + #4 (Open / Wildcard)**
 
-**Try it:** *(deployed URL goes here)* · **Code:** this repo · **Local:** `uv sync && uv run steward serve`
+**▶ Try it:** **[huzzzaif.github.io/datahub-steward](https://huzzzaif.github.io/datahub-steward/)**
+· **API:** [datahub-steward.onrender.com](https://datahub-steward.onrender.com/api/health)
+· **Local:** `uv sync && uv run steward serve`
+
+*The demo page is static and always up; the free-text box streams from the
+deployed backend. If the free instance is asleep the page says so and falls back
+to recorded runs, so the demo never presents as broken.*
 
 ---
 
