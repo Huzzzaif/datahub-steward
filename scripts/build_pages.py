@@ -19,6 +19,7 @@ Run it with a provider configured:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections import deque
 from pathlib import Path
@@ -35,6 +36,15 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 
 LIVE_URL = "https://github.com/Huzzzaif/datahub-steward#try-it-in-ten-seconds"
+
+#: Base URL of a deployed Steward API, if there is one.
+#:
+#: Empty means the page runs purely on recorded runs and says so. Set it (via
+#: STEWARD_API_BASE at build time) and the free-text box goes live: the page
+#: health-checks the backend on load, uses it when it answers, and silently
+#: falls back to the recordings when it doesn't — so a sleeping free dyno
+#: degrades to a working demo instead of a broken one.
+API_BASE = os.environ.get("STEWARD_API_BASE", "").rstrip("/")
 
 
 def build_graph() -> dict:
@@ -140,6 +150,7 @@ def main() -> int:
         "adjacency": adjacency,
         "runs": runs,
         "live_url": LIVE_URL,
+        "api_base": API_BASE,
         "demo_change": s.DEMO_CHANGE,
         "demo_symptom": s.DEMO_SYMPTOM,
     }

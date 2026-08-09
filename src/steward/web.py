@@ -21,6 +21,7 @@ import threading
 from typing import Iterator
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -31,6 +32,19 @@ from .crew import BlastRadiusCrew, CrewResult, RootCauseCrew, Stage
 from .fake import FakeCatalog
 
 app = FastAPI(title="Steward", docs_url="/api/docs")
+
+# The GitHub Pages demo is served from a different origin and calls this API for
+# its free-text box, so cross-origin requests have to be allowed. Everything
+# here is a read-only query over a public demo catalog with no credentials and
+# no user data, so a permissive policy costs nothing — the one secret involved,
+# the model API key, never leaves the server.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 #: One catalog for the process. On the fake it holds findings in memory, which
 #: is what makes the "ask again" button demonstrate compounding within a session.

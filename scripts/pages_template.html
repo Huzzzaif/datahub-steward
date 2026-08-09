@@ -107,15 +107,25 @@ down where the next person will find it. Built on
 
 <div class="card">
   <h2><span class="step">3</span>Now watch the agents</h2>
-  <p class="sub">A graph tells you what's connected. It can't tell you which of those
-  twelve things actually matters, who to warn, or what to do. That's the agents' job.</p>
+  <p class="sub">A graph tells you what is connected. It cannot tell you which of those
+  things actually matters, who to warn, or what to do. That is the agents job.</p>
   <div class="row">
     <button class="act" id="rBlast">What breaks if we change the payments table?</button>
     <button class="ghost" id="rCause">Why has the AI started behaving oddly?</button>
     <button class="ghost" id="rAgain" disabled>Ask the same thing again</button>
   </div>
-  <div class="hint">Ask the first question, then press "ask again" — and watch the numbers
-  at the bottom collapse. It doesn't work it out twice.</div>
+  <div class="hint">Ask the first question, then press ask again &mdash; and watch the numbers
+  at the bottom collapse. It does not work it out twice.</div>
+
+  <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+    <b id="askOwnH">Ask your own question</b>
+    <span class="rec" id="liveBadge" style="margin-left:8px"></span>
+    <textarea id="q" style="margin-top:8px" placeholder="e.g. what breaks if we drop the refunds table?"></textarea>
+    <div class="row">
+      <button class="act" id="rAsk">Ask</button>
+      <span class="muted" id="askNote" style="font-size:12.5px"></span>
+    </div>
+  </div>
 </div>
 
 <div class="card" id="out" style="display:none">
@@ -141,6 +151,7 @@ fetch("data.json").then(r => r.json()).then(d => {
   $("stakes").textContent = d.graph.stakes;
   $("liveLink").href = d.live_url;
   render();
+  checkLive();
 });
 
 function render(){
@@ -228,10 +239,13 @@ async function replay(key){
       `<div class="stage"><b>${esc(st.name)}</b><span>${esc(st.detail)}</span></div>`);
   }
 
-  const f = run.finding, st = run.stats;
+  showResult(run.answer, run.finding, run.stats);
+}
+
+function showResult(answer, f, st){
   $("result").innerHTML =
     (f ? `<div class="sev ${f.severity}">${f.severity}</div>` : "") +
-    `<p class="answer">${esc(run.answer)}</p>` +
+    `<p class="answer">${esc(answer)}</p>` +
     (f ? `<p class="hint">Written into the catalogue as <code>${esc(f.finding_id)}</code>,
           citing ${f.evidence_count} things it checked.</p>` : "") +
     `<div class="stats">
@@ -245,10 +259,87 @@ async function replay(key){
          in the catalogue last time and repeated it. That's the whole idea — the answer is
          stored where the next person will trip over it.</p>` : "");
 
-  ["rBlast","rCause"].forEach(i => $(i).disabled = false);
+  ["rBlast","rCause","rAsk"].forEach(i => { if($(i)) $(i).disabled = false; });
   $("rAgain").disabled = !askedBlast;
+  if(!LIVE && $("rAsk")) $("rAsk").disabled = true;
 }
 
+// --- live backend, when one exists ---------------------------------------
+// The page health-checks any configured API on load. If it answers, the free
+// text box streams from the real crews. If it doesn't — not deployed, asleep,
+// rate-limited — the box says so plainly and the recorded runs still work, so
+// the demo degrades rather than breaking.
+let LIVE = false;
+
+async function checkLive(){
+  const base = (D && D.api_base) || "";
+  if(!base){
+    $("liveBadge").textContent = "recorded only";
+    $("askNote").textContent = "No live backend is deployed, so free-text answers aren't available here. The three questions above are real recorded runs; clone the repo to ask your own.";
+    $("rAsk").disabled = true;
+    return;
+  }
+  try {
+    const r = await fetch(base + "/api/health", {signal: AbortSignal.timeout(9000)});
+    if(!r.ok) throw new Error("unhealthy");
+    const h = await r.json();
+    LIVE = true;
+    $("liveBadge").textContent = "live" + (h.provider ? " · " + h.provider : "");
+    $("askNote").textContent = "Answers are generated live, right now.";
+    $("rAsk").disabled = false;
+  } catch {
+    $("liveBadge").textContent = "backend asleep";
+    $("askNote").textContent = "The live backend didn't answer, so free-text is unavailable right now. The recorded runs above still work.";
+    $("rAsk").disabled = true;
+  }
+}
+
+async function askLive(){
+  const question = $("q").value.trim();
+  if(!question || !LIVE) return;
+  // Route by intent: "what breaks" walks forward, anything else walks back.
+  const mode = /break|chang|renam|drop|remov|delet|migrat/i.test(question) ? "blast" : "cause";
+
+  ["rBlast","rCause","rAgain","rAsk"].forEach(i => $(i).disabled = true);
+  $("out").style.display = "block";
+  $("recBadge").textContent = "live run";
+  $("stages").innerHTML = '<div class="muted">thinking…</div>';
+  $("result").innerHTML = "";
+
+  try {
+    const resp = await fetch(D.api_base + "/api/ask", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question, mode}),
+    });
+    const reader = resp.body.getReader(); const dec = new TextDecoder();
+    let buf = "", first = true;
+    while(true){
+      const {value, done} = await reader.read(); if(done) break;
+      buf += dec.decode(value, {stream:true});
+      const parts = buf.split("\n\n"); buf = parts.pop();
+      for(const part of parts){
+        const ev = (part.match(/^event: (.*)$/m)||[])[1];
+        const raw = (part.match(/^data: (.*)$/m)||[])[1];
+        if(!ev || !raw) continue;
+        const d = JSON.parse(raw);
+        if(ev === "stage"){
+          if(first){ $("stages").innerHTML = ""; first = false; }
+          $("stages").insertAdjacentHTML("beforeend",
+            `<div class="stage"><b>${esc(d.name)}</b><span>${esc(d.detail)}</span></div>`);
+        } else if(ev === "error"){
+          $("result").innerHTML = `<p style="color:var(--crit)">${esc(d.message)}</p>`;
+        } else if(ev === "done"){
+          showResult(d.answer, d.finding, d.stats);
+        }
+      }
+    }
+  } catch {
+    $("result").innerHTML = '<p style="color:var(--crit)">The live backend stopped responding mid-answer. The recorded runs above still work.</p>';
+    ["rBlast","rCause","rAsk"].forEach(i => $(i).disabled = false);
+  }
+}
+
+$("rAsk").onclick = askLive;
 $("rBlast").onclick = () => { askedBlast = true; replay("blast_cold"); };
 $("rAgain").onclick = () => replay("blast_warm");
 $("rCause").onclick = () => replay("cause");
