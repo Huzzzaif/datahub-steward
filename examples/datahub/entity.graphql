@@ -1,0 +1,43 @@
+# Issued by DataHubAdapter.get_entity().
+query stewardEntity($urn: String!) {
+  entity(urn: $urn) {
+    urn
+    type
+    
+    ... on Dataset {
+      dsName: name
+      platform { name }
+      dsProps: properties { name description }
+    }
+    ... on Dashboard { dashProps: properties { name description } }
+    ... on Chart { chartProps: properties { name description } }
+    ... on DataJob { jobProps: properties { name description } }
+    ... on MLModel {
+      mlName: name
+      mlProps: properties { name description }
+    }
+    ... on MLModelGroup {
+      mlgName: name
+      mlgProps: properties { name description }
+    }
+
+    
+    ... on Dataset {
+      ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } }
+      tags { tags { tag { urn } } }
+      schemaMetadata { fields { fieldPath nativeDataType description nullable } }
+    }
+    ... on Dashboard {
+      ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } }
+      tags { tags { tag { urn } } }
+    }
+    ... on MLModel {
+      ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } }
+      tags { tags { tag { urn } } }
+    }
+    ... on DataJob {
+      ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } }
+    }
+
+  }
+}

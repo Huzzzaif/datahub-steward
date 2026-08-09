@@ -1,0 +1,20 @@
+{
+  "question": "We want to rename raw.stripe.charges.amount_cents to amount_minor_units and change its type from NUMBER to VARCHAR to support zero-decimal currencies. What breaks?",
+  "first_ask": {
+    "tool_calls": 2,
+    "entities_inspected": 13,
+    "prior_findings_reused": 0,
+    "input_tokens": 488,
+    "output_tokens": 78,
+    "wall_seconds": 0.88
+  },
+  "second_ask": {
+    "tool_calls": 1,
+    "entities_inspected": 1,
+    "prior_findings_reused": 1,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "wall_seconds": 0.0
+  },
+  "note": "Identical question. The second run reads the finding the first wrote into DataHub instead of re-deriving it, so it does no traversal and no model work."
+}

@@ -1,0 +1,23 @@
+{
+  "finding_id": "root_cause-churn-predictor",
+  "subject_urn": "urn:li:mlModel:(urn:li:dataPlatform:mlflow,churn_predictor,PROD)",
+  "kind": "root_cause",
+  "severity": "warning",
+  "title": "churn_predictor incident: train_churn_predictor is the leading upstream candidate",
+  "body": "The leading candidate is train_churn_predictor, which is a potential cause but not confirmed. To investigate, check the train_churn_predictor job logs first for any errors or failures that may have triggered the issue on churn_predictor.",
+  "evidence_urns": [
+    "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_churn_predictor)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.features.customer_features,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.fct_orders,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.marts.customer_ltv,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.support.tickets,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.dim_customer,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.events.checkout_events,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.stripe.charges,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.stripe.refunds,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.crm.customers,PROD)"
+  ],
+  "built_on": [],
+  "agent": "root-cause-crew",
+  "created_at": "2026-08-09T21:27:53+00:00"
+}

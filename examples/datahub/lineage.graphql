@@ -1,0 +1,43 @@
+# Issued by DataHubAdapter.lineage(). Fragments are aliased per entity
+# type because `properties.name` has different nullability on Dataset
+# vs Dashboard, which makes an unaliased query a hard validation error.
+query stewardLineage($urn: String!, $direction: LineageDirection!, $count: Int!, $degrees: [String!]) {
+  searchAcrossLineage(
+    input: {
+      urn: $urn
+      direction: $direction
+      query: "*"
+      start: 0
+      count: $count
+      orFilters: [{ and: [{ field: "degree", values: $degrees, condition: EQUAL }] }]
+    }
+  ) {
+    total
+    searchResults {
+      degree
+      entity { urn type 
+    ... on Dataset {
+      dsName: name
+      platform { name }
+      dsProps: properties { name description }
+    }
+    ... on Dashboard { dashProps: properties { name description } }
+    ... on Chart { chartProps: properties { name description } }
+    ... on DataJob { jobProps: properties { name description } }
+    ... on MLModel {
+      mlName: name
+      mlProps: properties { name description }
+    }
+    ... on MLModelGroup {
+      mlgName: name
+      mlgProps: properties { name description }
+    }
+ 
+    ... on Dataset { ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } } }
+    ... on Dashboard { ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } } }
+    ... on MLModel { ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } } }
+    ... on DataJob { ownership { owners { owner { ... on CorpUser { urn } ... on CorpGroup { urn } } } } }
+ }
+    }
+  }
+}

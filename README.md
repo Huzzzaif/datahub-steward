@@ -58,6 +58,9 @@ matters.
 
 > **Judges / reviewers:** [SUBMISSION.md](SUBMISSION.md) is the short version —
 > what it does, what's verified, and the measured before/after.
+> [**examples/**](examples/) has real generated artifacts — findings, DataHub
+> payloads, and full run transcripts — so you can assess the output without
+> running anything.
 
 ## Try it in ten seconds
 

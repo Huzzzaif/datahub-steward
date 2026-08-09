@@ -1,0 +1,25 @@
+{
+  "finding_id": "blast_radius-raw-stripe-charges",
+  "subject_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.stripe.charges,PROD)",
+  "kind": "blast_radius",
+  "severity": "critical",
+  "title": "raw.stripe.charges feeds churn_predictor (MLMODEL), 4 hops downstream",
+  "body": "Changing raw.stripe.charges puts revenue reporting and churn prediction at risk. Twelve downstream assets are affected, including key reports and models. Analytics_eng, bi_team, finance_systems, and ml_platform teams must be consulted to ensure changes do not disrupt critical workflows like Executive Revenue Overview and Finance Month-End Close.",
+  "evidence_urns": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.fct_orders,PROD)",
+    "urn:li:dataJob:(urn:li:dataFlow:(airflow,daily_analytics,PROD),build_fct_orders)",
+    "urn:li:dashboard:(looker,executive_revenue_overview)",
+    "urn:li:dashboard:(looker,finance_month_end_close)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.features.customer_features,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.marts.customer_ltv,PROD)",
+    "urn:li:dashboard:(looker,churn_monitoring)",
+    "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_features,PROD),build_customer_features)",
+    "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_churn_predictor)",
+    "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_ltv_regressor)",
+    "urn:li:mlModel:(urn:li:dataPlatform:mlflow,churn_predictor,PROD)",
+    "urn:li:mlModel:(urn:li:dataPlatform:mlflow,ltv_regressor,PROD)"
+  ],
+  "built_on": [],
+  "agent": "blast-radius-crew",
+  "created_at": "2026-08-09T21:27:52+00:00"
+}
