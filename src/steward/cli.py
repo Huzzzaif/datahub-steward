@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 
 from . import scenario as s
@@ -133,6 +134,27 @@ def cmd_cause(args: argparse.Namespace) -> int:
     return _run_agent("cause", args.question, args.fake, single=True)
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Run the web demo.
+
+    Defaults to the in-memory catalog so this works with nothing else running;
+    set STEWARD_CATALOG=datahub to point the same UI at a live instance.
+    """
+    import uvicorn
+
+    # Fake by default so `steward serve` works with nothing else running; opt in
+    # to the real thing explicitly.
+    os.environ["STEWARD_CATALOG"] = "datahub" if args.datahub else "fake"
+    config = Config.from_env()
+    _check_provider(config)
+
+    port = int(os.environ.get("PORT", args.port))
+    print(f"Steward UI on http://localhost:{port}")
+    print(f"  provider: {config.provider}   catalog: {os.environ['STEWARD_CATALOG']}")
+    uvicorn.run("steward.web:app", host="0.0.0.0", port=port, log_level="warning")
+    return 0
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
     """The point of the whole project, in two runs.
 
@@ -205,6 +227,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     add("cause", cmd_cause, "why is this broken?", needs_question=True)
     add("demo", cmd_demo, "two-run knowledge-compounding demo")
+
+    serve = sub.add_parser("serve", help="run the web demo")
+    serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument(
+        "--datahub",
+        action="store_true",
+        help="use a live DataHub instead of the in-memory catalog",
+    )
+    serve.set_defaults(func=cmd_serve, fake=False)
 
     args = parser.parse_args(argv)
     logging.basicConfig(

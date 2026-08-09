@@ -28,6 +28,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 from .catalog import Catalog
 from .config import Config
@@ -81,16 +82,27 @@ def _all_indices(reply: str, ceiling: int) -> list[int]:
     return seen
 
 
-class BlastRadiusCrew:
+class _CrewBase:
+    """Stages both crews share: one bounded model call, and subject resolution."""
+
     def __init__(
         self,
         catalog: Catalog,
         config: Config | None = None,
         provider: LLMProvider | None = None,
+        on_stage: Callable[[Stage], None] | None = None,
     ) -> None:
         self.catalog = catalog
         self.config = config or Config.from_env()
         self.provider = provider or build_provider(self.config)
+        #: Called as each stage completes, so a UI can show progress live rather
+        #: than revealing a finished list and pretending it streamed.
+        self.on_stage = on_stage
+
+    def _emit(self, trace: list[Stage], stage: Stage) -> None:
+        trace.append(stage)
+        if self.on_stage is not None:
+            self.on_stage(stage)
 
     # -- one bounded model call -----------------------------------------
 
@@ -121,10 +133,10 @@ class BlastRadiusCrew:
         options = list(candidates.values())
         stats.entities_inspected += len(options)
         if not options:
-            trace.append(Stage("resolve", "no candidates found"))
+            self._emit(trace, Stage("resolve", "no candidates found"))
             return None
         if len(options) == 1:
-            trace.append(Stage("resolve", f"only candidate: {options[0].name}"))
+            self._emit(trace, Stage("resolve", f"only candidate: {options[0].name}"))
             return options[0]
 
         listing = "\n".join(
@@ -146,10 +158,31 @@ class BlastRadiusCrew:
                 range(len(options)),
                 key=lambda i: sum(w in options[i].name.lower() for w in words),
             )
-            trace.append(Stage("resolve", f"model reply unusable; fell back to {options[index].name}"))
+            self._emit(trace, Stage("resolve", f"model reply unusable; fell back to {options[index].name}"))
         else:
-            trace.append(Stage("resolve", f"model chose {options[index].name}"))
+            self._emit(trace, Stage("resolve", f"model chose {options[index].name}"))
         return options[index]
+
+    def _prior(self, subject: Entity, stats: RunStats, trace: list[Stage]) -> Finding | None:
+        """Whatever an earlier run already concluded here.
+
+        Checked before any traversal — re-deriving settled work is the failure
+        mode this whole system exists to avoid.
+        """
+        prior = self.catalog.read_findings(subject.urn)
+        stats.tool_calls += 1
+        if not prior:
+            return None
+        stats.prior_findings_reused += len(prior)
+        self._emit(
+            trace,
+            Stage("prior", f"reusing {len(prior)} existing finding(s) — skipping re-derivation"),
+        )
+        return prior[0]
+
+
+class BlastRadiusCrew(_CrewBase):
+    """Forward from a proposed change: what breaks, and whose problem is it."""
 
     # -- stage 2: traverse (no model) ------------------------------------
 
@@ -159,7 +192,7 @@ class BlastRadiusCrew:
         edges = self.catalog.lineage(subject.urn, "downstream", max_degree=3)
         stats.tool_calls += 1
         stats.entities_inspected += len(edges)
-        trace.append(Stage("traverse", f"{len(edges)} downstream entities (code, no model)"))
+        self._emit(trace, Stage("traverse", f"{len(edges)} downstream entities (code, no model)"))
         return edges
 
     # -- stage 3: assess -------------------------------------------------
@@ -193,9 +226,9 @@ class BlastRadiusCrew:
             picked = [
                 e for e in edges if e.entity.entity_type in {"MLMODEL", "DASHBOARD"}
             ]
-            trace.append(Stage("assess", f"model reply unusable; fell back to {len(picked)} terminal consumers"))
+            self._emit(trace, Stage("assess", f"model reply unusable; fell back to {len(picked)} terminal consumers"))
         else:
-            trace.append(Stage("assess", f"model flagged {len(picked)} high-risk assets"))
+            self._emit(trace, Stage("assess", f"model flagged {len(picked)} high-risk assets"))
         return picked[:6]
 
     # -- stage 4: compose ------------------------------------------------
@@ -228,9 +261,9 @@ class BlastRadiusCrew:
                 f"{subject.name} has {len(edges)} downstream dependents, including "
                 f"{names}. Owners to consult: {', '.join(owners) or 'unknown'}."
             )
-            trace.append(Stage("compose", "model returned nothing; used deterministic summary"))
+            self._emit(trace, Stage("compose", "model returned nothing; used deterministic summary"))
         else:
-            trace.append(Stage("compose", f"{len(body.split())} words"))
+            self._emit(trace, Stage("compose", f"{len(body.split())} words"))
 
         top = critical[0].entity if critical else None
         title = (
@@ -258,14 +291,8 @@ class BlastRadiusCrew:
                 trace=trace,
             )
 
-        prior = self.catalog.read_findings(subject.urn)
-        stats.tool_calls += 1
-        if prior:
-            stats.prior_findings_reused += len(prior)
-            trace.append(
-                Stage("prior", f"reusing {len(prior)} existing finding(s) — skipping re-derivation")
-            )
-            existing = prior[0]
+        existing = self._prior(subject, stats, trace)
+        if existing:
             stats.wall_seconds = round(time.monotonic() - started, 2)
             return CrewResult(
                 answer=(
@@ -278,6 +305,25 @@ class BlastRadiusCrew:
             )
 
         edges = self._traverse(subject, stats, trace)
+
+        # Nothing downstream means there is no blast radius to warn about, and a
+        # finding saying so would be noise on an entity someone has to read.
+        # Answer the question, write nothing.
+        if not edges:
+            self._emit(trace, Stage("record", "nothing downstream — no finding recorded"))
+            stats.wall_seconds = round(time.monotonic() - started, 2)
+            return CrewResult(
+                answer=(
+                    f"{subject.name} has nothing downstream of it in the catalog, "
+                    "so changing it breaks nothing that DataHub knows about. Note "
+                    "that absence of lineage is not proof of no consumers — it can "
+                    "also mean lineage was never captured for this asset."
+                ),
+                finding=None,
+                stats=stats,
+                trace=trace,
+            )
+
         critical = self._assess(subject, edges, stats, trace)
         title, body = self._compose(subject, critical, edges, stats, trace)
 
@@ -296,7 +342,148 @@ class BlastRadiusCrew:
             agent="blast-radius-crew",
         )
         self.catalog.write_finding(finding)
-        trace.append(Stage("record", f"wrote {finding.finding_id} to the catalog"))
+        self._emit(trace, Stage("record", f"wrote {finding.finding_id} to the catalog"))
+
+        stats.wall_seconds = round(time.monotonic() - started, 2)
+        return CrewResult(answer=f"{title}. {body}", finding=finding, stats=stats, trace=trace)
+
+
+class RootCauseCrew(_CrewBase):
+    """Backward from a symptom: what most likely caused it.
+
+    Same staged shape as the blast-radius crew, and for the same reason — but
+    the judgment step is a *ranking* rather than a filter, because the honest
+    answer to "why did this break" is usually a shortlist with reasons, not a
+    single confident culprit.
+    """
+
+    def _traverse(
+        self, subject: Entity, stats: RunStats, trace: list[Stage]
+    ) -> list[LineageEdge]:
+        edges = self.catalog.lineage(subject.urn, "upstream", max_degree=3)
+        stats.tool_calls += 1
+        stats.entities_inspected += len(edges)
+        self._emit(trace, Stage("traverse", f"{len(edges)} upstream entities (code, no model)"))
+        return edges
+
+    def _rank(
+        self, subject: Entity, edges: list[LineageEdge], stats: RunStats, trace: list[Stage]
+    ) -> list[LineageEdge]:
+        """Order the upstream candidates by how likely each is to be the cause."""
+        if not edges:
+            return []
+
+        listing = "\n".join(
+            f"{i}. {e.entity.name} — {e.entity.entity_type}, {e.degree} hop(s) upstream"
+            for i, e in enumerate(edges)
+        )
+        reply = self._ask(
+            "You rank likely causes of a data incident. Reply with only numbers "
+            "separated by commas, most likely first. No words.",
+            f"Symptom reported on: {subject.name}\n\n"
+            f"These feed it:\n{listing}\n\n"
+            "Which are the most likely causes? Raw source tables that changed "
+            "are more often the cause than intermediate models. Rank the most "
+            "likely first. Reply with just the numbers.",
+            stats,
+        )
+
+        ranked = [edges[i] for i in _all_indices(reply, len(edges))]
+        if not ranked:
+            # Deterministic fallback: raw sources first, then by distance. A
+            # garbled model reply degrades to a defensible ordering rather than
+            # taking the run down.
+            ranked = sorted(
+                edges,
+                key=lambda e: (0 if e.entity.name.startswith("raw.") else 1, e.degree),
+            )
+            self._emit(trace, Stage("rank", f"model reply unusable; fell back to {len(ranked)} ordered by source-first"))
+        else:
+            self._emit(trace, Stage("rank", f"model ranked {len(ranked)} candidate causes"))
+        return ranked[:5]
+
+    def _compose(
+        self,
+        subject: Entity,
+        ranked: list[LineageEdge],
+        stats: RunStats,
+        trace: list[Stage],
+    ) -> tuple[str, str]:
+        top = ranked[0].entity if ranked else None
+        shortlist = ", ".join(e.entity.name for e in ranked[:3]) or "no upstream dependencies"
+        owners = sorted({o.split(":")[-1] for e in ranked for o in e.entity.owners})
+
+        body = self._ask(
+            "You write short, factual incident notes for data engineers. Plain "
+            "prose, no headings, no bullets, under 90 words. Do not invent details.",
+            f"A problem was reported on {subject.name}.\n"
+            f"Most likely upstream causes, in order: {shortlist}.\n"
+            f"Teams owning those: {', '.join(owners) or 'unknown'}.\n"
+            "State the leading candidate, say plainly that it is a candidate "
+            "rather than confirmed, and say what to check first.",
+            stats,
+        )
+        if not body:
+            body = (
+                f"Leading candidate is {top.name if top else 'unknown'}. "
+                f"Other candidates: {shortlist}. Owners to contact: "
+                f"{', '.join(owners) or 'unknown'}. This is a ranking from lineage, "
+                "not a confirmed cause — check the leading candidate for recent changes first."
+            )
+            self._emit(trace, Stage("compose", "model returned nothing; used deterministic summary"))
+        else:
+            self._emit(trace, Stage("compose", f"{len(body.split())} words"))
+
+        title = (
+            f"{subject.name} incident: {top.name} is the leading upstream candidate"
+            if top
+            else f"{subject.name} has no upstream dependencies recorded"
+        )
+        return title, body
+
+    def run(self, question: str) -> CrewResult:
+        stats = RunStats()
+        trace: list[Stage] = []
+        started = time.monotonic()
+
+        subject = self._resolve(question, stats, trace)
+        if subject is None:
+            stats.wall_seconds = round(time.monotonic() - started, 2)
+            return CrewResult(
+                answer="I could not find an entity in the catalog matching that symptom.",
+                finding=None,
+                stats=stats,
+                trace=trace,
+            )
+
+        existing = self._prior(subject, stats, trace)
+        if existing:
+            stats.wall_seconds = round(time.monotonic() - started, 2)
+            return CrewResult(
+                answer=f"Already known ({existing.finding_id}): {existing.title}. {existing.body}",
+                finding=existing,
+                stats=stats,
+                trace=trace,
+            )
+
+        edges = self._traverse(subject, stats, trace)
+        ranked = self._rank(subject, edges, stats, trace)
+        title, body = self._compose(subject, ranked, stats, trace)
+
+        finding = Finding(
+            finding_id=f"root_cause-{re.sub(r'[^a-z0-9]+', '-', subject.name.lower()).strip('-')}",
+            subject_urn=subject.urn,
+            kind="root_cause",
+            # A ranked shortlist is a lead, not a confirmed defect — severity
+            # stays at warning so it never outranks a real blast-radius finding.
+            severity="warning" if ranked else "info",
+            title=title,
+            body=body,
+            evidence_urns=[e.entity.urn for e in edges],
+            agent="root-cause-crew",
+        )
+        self.catalog.write_finding(finding)
+        self._emit(trace, Stage("record", f"wrote {finding.finding_id} to the catalog"))
 
         stats.wall_seconds = round(time.monotonic() - started, 2)
         return CrewResult(answer=f"{title}. {body}", finding=finding, stats=stats, trace=trace)

@@ -1,0 +1,20 @@
+# One-click deploy: https://render.com/deploy
+#
+# The only thing you must supply is GROQ_API_KEY — free, no credit card, from
+# https://console.groq.com/keys. Everything else has a working default.
+services:
+  - type: web
+    name: steward
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: STEWARD_PROVIDER
+        value: groq
+      - key: STEWARD_CATALOG
+        value: fake
+      - key: STEWARD_GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GROQ_API_KEY
+        sync: false   # set this in the Render dashboard; never commit it

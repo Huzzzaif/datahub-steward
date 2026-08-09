@@ -174,6 +174,116 @@ class OllamaProvider:
         return {"role": "tool", "content": result, "name": call.name}
 
 
+# ------------------------------------------------------------------ groq ----
+
+
+class OpenAICompatProvider:
+    """Any OpenAI-compatible `/chat/completions` endpoint.
+
+    Used for Groq, which is what the hosted demo runs on: free tier, no credit
+    card, serves Llama models fast enough that a judge doesn't sit watching a
+    spinner. The same class points at OpenRouter, Together, or a self-hosted
+    vLLM by changing `base_url`.
+
+    Ollama can't back the hosted demo — a free web dyno has no GPU and not
+    enough RAM for an 8B model — so this exists purely to make the deployed
+    version possible. Local development stays on Ollama.
+    """
+
+    name = "groq"
+
+    def __init__(
+        self,
+        model: str = "llama-3.3-70b-versatile",
+        base_url: str = "https://api.groq.com/openai/v1",
+        api_key: str | None = None,
+        timeout: float = 120.0,
+    ) -> None:
+        import os
+
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key or os.environ.get("GROQ_API_KEY", "")
+        self._client = httpx.Client(timeout=timeout)
+
+    def available(self) -> tuple[bool, str]:
+        if not self.api_key:
+            return False, (
+                "GROQ_API_KEY is not set. Get a free key (no card needed) at "
+                "https://console.groq.com/keys, or use the local provider with "
+                "STEWARD_PROVIDER=ollama."
+            )
+        return True, ""
+
+    def complete(
+        self,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSpec],
+    ) -> Turn:
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system}, *messages],
+            "temperature": 0.1,
+        }
+        if tools:
+            payload["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    },
+                }
+                for t in tools
+            ]
+
+        resp = self._client.post(
+            f"{self.base_url}/chat/completions",
+            json=payload,
+            headers={"Authorization": f"Bearer {self.api_key}"},
+        )
+        if resp.status_code >= 400:
+            # Surface the provider's own message — "model decommissioned" and
+            # "rate limit" are both common and both need different fixes.
+            raise RuntimeError(f"{self.name} error {resp.status_code}: {resp.text[:300]}")
+
+        data = resp.json()
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message", {}) or {}
+
+        calls = []
+        for raw_call in message.get("tool_calls") or []:
+            fn = raw_call.get("function", {}) or {}
+            args = fn.get("arguments", {})
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    args = {}
+            calls.append(
+                ToolCall(name=fn.get("name", ""), arguments=args or {}, call_id=raw_call.get("id"))
+            )
+
+        usage = data.get("usage", {}) or {}
+        return Turn(
+            text=(message.get("content") or "").strip(),
+            tool_calls=calls,
+            input_tokens=usage.get("prompt_tokens", 0) or 0,
+            output_tokens=usage.get("completion_tokens", 0) or 0,
+            raw=message,
+        )
+
+    def format_assistant(self, turn: Turn) -> dict[str, Any]:
+        return turn.raw or {"role": "assistant", "content": turn.text}
+
+    def format_tool_result(self, call: ToolCall, result: str) -> dict[str, Any]:
+        # OpenAI-shaped APIs match results to calls by id, unlike Ollama which
+        # matches by name and position.
+        return {"role": "tool", "tool_call_id": call.call_id, "content": result}
+
+
 # ------------------------------------------------------------ anthropic ----
 
 
@@ -309,4 +419,6 @@ def build_provider(config) -> LLMProvider:
     """Pick a provider from config. Free/local by default."""
     if config.provider == "anthropic":
         return AnthropicProvider(model=config.model, effort=config.effort)
+    if config.provider == "groq":
+        return OpenAICompatProvider(model=config.groq_model, base_url=config.groq_base_url)
     return OllamaProvider(model=config.ollama_model, host=config.ollama_host)

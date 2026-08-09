@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
-Provider = Literal["ollama", "anthropic"]
+Provider = Literal["ollama", "groq", "anthropic"]
 
 
 @dataclass(frozen=True)
@@ -28,12 +28,23 @@ class Config:
     #     export STEWARD_PROVIDER=anthropic
     #     export ANTHROPIC_API_KEY=sk-ant-...
     #
+    #
+    # The hosted demo uses "groq" — free tier, no card, and a free web dyno has
+    # neither the GPU nor the RAM to run Ollama:
+    #
+    #     export STEWARD_PROVIDER=groq
+    #     export GROQ_API_KEY=gsk_...        # console.groq.com/keys
+    #
     provider: Provider = "ollama"
 
     #: Ollama settings. llama3.1 is the default because it supports tool calling;
     #: phi3 and most small models do not, and will silently never call a tool.
     ollama_model: str = "llama3.1:8b"
     ollama_host: str = "http://localhost:11434"
+
+    #: Groq settings, used only when provider == "groq".
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
 
     #: Anthropic settings, used only when provider == "anthropic".
     model: str = "claude-opus-5"
@@ -46,7 +57,7 @@ class Config:
     @classmethod
     def from_env(cls) -> Config:
         provider = os.environ.get("STEWARD_PROVIDER", cls.provider).lower()
-        if provider not in ("ollama", "anthropic"):
+        if provider not in ("ollama", "groq", "anthropic"):
             provider = cls.provider
         return cls(
             datahub_server=os.environ.get("DATAHUB_GMS_URL", cls.datahub_server),
@@ -54,6 +65,8 @@ class Config:
             provider=provider,  # type: ignore[arg-type]
             ollama_model=os.environ.get("STEWARD_OLLAMA_MODEL", cls.ollama_model),
             ollama_host=os.environ.get("OLLAMA_HOST", cls.ollama_host),
+            groq_model=os.environ.get("STEWARD_GROQ_MODEL", cls.groq_model),
+            groq_base_url=os.environ.get("GROQ_BASE_URL", cls.groq_base_url),
             model=os.environ.get("STEWARD_MODEL", cls.model),
             effort=os.environ.get("STEWARD_EFFORT", cls.effort),
         )

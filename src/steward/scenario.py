@@ -62,6 +62,8 @@ class SeedEntity:
 RAW_CHARGES = dataset_urn("snowflake", "raw.stripe.charges")
 RAW_CHECKOUT = dataset_urn("snowflake", "raw.events.checkout_events")
 RAW_CUSTOMERS = dataset_urn("snowflake", "raw.crm.customers")
+RAW_REFUNDS = dataset_urn("snowflake", "raw.stripe.refunds")
+RAW_TICKETS = dataset_urn("snowflake", "raw.support.tickets")
 
 # -- modelled layer --------------------------------------------------------
 
@@ -81,6 +83,7 @@ JOB_TRAIN_LTV = datajob_urn("ml_training", "train_ltv_regressor")
 
 DASH_REVENUE = dashboard_urn("looker", "executive_revenue_overview")
 DASH_CHURN = dashboard_urn("looker", "churn_monitoring")
+DASH_FINANCE = dashboard_urn("looker", "finance_month_end_close")
 
 MODEL_CHURN = mlmodel_urn("mlflow", "churn_predictor")
 MODEL_LTV = mlmodel_urn("mlflow", "ltv_regressor")
@@ -139,6 +142,35 @@ ENTITIES: list[SeedEntity] = [
         ],
     ),
     SeedEntity(
+        urn=RAW_REFUNDS,
+        entity_type="DATASET",
+        name="raw.stripe.refunds",
+        platform="snowflake",
+        description="Raw Stripe refund events. Netted off revenue in fct_orders.",
+        owners=[user_urn("payments_team")],
+        columns=[
+            Column("refund_id", "VARCHAR", nullable=False),
+            Column("charge_id", "VARCHAR", "Joins back to raw.stripe.charges.", nullable=False),
+            Column("amount_cents", "NUMBER(38,0)", "Refunded amount, smallest unit.", nullable=False),
+            Column("refunded_at", "TIMESTAMP_NTZ", nullable=False),
+        ],
+    ),
+    SeedEntity(
+        urn=RAW_TICKETS,
+        entity_type="DATASET",
+        name="raw.support.tickets",
+        platform="snowflake",
+        description="Support tickets from Zendesk. Ticket volume is a churn signal.",
+        owners=[user_urn("support_ops")],
+        columns=[
+            Column("ticket_id", "VARCHAR", nullable=False),
+            Column("customer_id", "VARCHAR", nullable=False),
+            Column("severity", "VARCHAR", "low | normal | urgent"),
+            Column("opened_at", "TIMESTAMP_NTZ", nullable=False),
+            Column("resolved_at", "TIMESTAMP_NTZ", "Null while still open."),
+        ],
+    ),
+    SeedEntity(
         urn=DIM_CUSTOMER,
         entity_type="DATASET",
         name="analytics.core.dim_customer",
@@ -159,7 +191,7 @@ ENTITIES: list[SeedEntity] = [
         platform="snowflake",
         description="One row per completed order, with revenue in USD.",
         owners=[user_urn("analytics_eng")],
-        upstreams=[RAW_CHARGES, RAW_CHECKOUT],
+        upstreams=[RAW_CHARGES, RAW_CHECKOUT, RAW_REFUNDS],
         columns=[
             Column("order_id", "VARCHAR", nullable=False),
             Column("customer_key", "VARCHAR", nullable=False),
@@ -189,12 +221,16 @@ ENTITIES: list[SeedEntity] = [
         platform="snowflake",
         description="Feature table serving the churn and LTV models.",
         owners=[user_urn("ml_platform")],
-        upstreams=[CUSTOMER_LTV, FCT_ORDERS],
+        # Two independent upstream branches — payments and support — which is
+        # what makes root-cause analysis a real ranking problem rather than a
+        # single-path lookup.
+        upstreams=[CUSTOMER_LTV, FCT_ORDERS, RAW_TICKETS],
         columns=[
             Column("customer_key", "VARCHAR", nullable=False),
             Column("ltv_usd", "NUMBER(38,2)", "Sourced from customer_ltv."),
             Column("orders_last_30d", "NUMBER(38,0)"),
             Column("avg_order_value_usd", "NUMBER(38,2)", "Derived from revenue_usd."),
+            Column("open_tickets_30d", "NUMBER(38,0)", "Sourced from raw.support.tickets."),
         ],
     ),
     SeedEntity(
@@ -230,6 +266,18 @@ ENTITIES: list[SeedEntity] = [
         description="Tracks churn model scores against actual churn.",
         owners=[user_urn("bi_team")],
         upstreams=[CUSTOMER_FEATURES],
+    ),
+    SeedEntity(
+        urn=DASH_FINANCE,
+        entity_type="DASHBOARD",
+        name="Finance Month-End Close",
+        platform="looker",
+        description=(
+            "Used by Finance to close the books each month. Numbers here are "
+            "reported externally, so a silent change upstream is expensive."
+        ),
+        owners=[user_urn("finance_systems")],
+        upstreams=[FCT_ORDERS],
     ),
     SeedEntity(
         urn=JOB_TRAIN_CHURN,
@@ -280,4 +328,13 @@ DEMO_CHANGE = (
     "We want to rename raw.stripe.charges.amount_cents to amount_minor_units "
     "and change its type from NUMBER to VARCHAR to support zero-decimal "
     "currencies. What breaks?"
+)
+
+#: The symptom the root-cause demo starts from. Deliberately has more than one
+#: plausible explanation — the churn model draws on both payments data and
+#: support data — so ranking candidates is the actual work.
+DEMO_SYMPTOM = (
+    "The churn_predictor model started scoring almost every customer as "
+    "high-risk overnight. Nothing was deployed to the model itself. "
+    "What upstream is most likely responsible?"
 )

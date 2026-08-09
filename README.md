@@ -41,7 +41,30 @@ Nobody reading the raw payments table would guess it feeds a production churn
 model. That is the whole point: blast radius is invisible precisely when it
 matters.
 
-## Quickstart
+> **Judges / reviewers:** [SUBMISSION.md](SUBMISSION.md) is the short version —
+> what it does, what's verified, and the measured before/after.
+
+## Try it in ten seconds
+
+```bash
+uv sync
+uv run steward serve      # → http://localhost:8000
+```
+
+That runs the web UI against the in-memory catalog, so it needs no Docker and no
+DataHub. Ask the demo question, watch the crew's stages stream in, then press
+**"Ask the same thing again"** and watch the second run finish in about a second
+with zero tokens, because it reads the finding the first run wrote.
+
+You'll need one of: Ollama with `llama3.1` (free, local, default), or a free
+[Groq key](https://console.groq.com/keys) with `STEWARD_PROVIDER=groq`.
+
+### Deploying it
+
+`Dockerfile` and `render.yaml` are included. On Render, point at the repo and
+set `GROQ_API_KEY` in the dashboard — everything else defaults correctly.
+
+## Quickstart against real DataHub
 
 ```bash
 uv sync
@@ -142,9 +165,12 @@ uv run steward parity  # requires a running DataHub
 | Finding write-back / read-back | Verified — idempotent, tags applied |
 | Seeder (15 entities) | Verified |
 | Fake ↔ live parity | Verified via `steward parity` |
-| Test suite | 13 passing |
-| Agent crew on free local llama3.1:8b | Verified — cold run 12 entities / 515 tokens / 4.3s |
-| Knowledge compounding | Verified — second run 1 entity / 0 tokens / 0.37s |
+| Test suite | 23 passing, no Docker or network needed |
+| Blast Radius crew on free local llama3.1:8b | Verified — 30 entities / 840 tokens / 9.6s |
+| Root Cause crew on free local llama3.1:8b | Verified — ranks candidates, hedges appropriately |
+| Knowledge compounding | Verified — second run 18 entities / 281 tokens / 1.1s |
+| Web UI with live stage streaming | Verified locally |
+| Groq provider | Implemented; deploy path untested end-to-end |
 | Anthropic provider | Implemented, not exercised (no key on this machine) |
 
 ## Licence
