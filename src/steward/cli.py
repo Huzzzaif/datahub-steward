@@ -15,7 +15,6 @@ import os
 import sys
 
 from . import scenario as s
-from .adapter import DataHubAdapter
 from .agent import blast_radius_agent, root_cause_agent
 from .crew import BlastRadiusCrew, RootCauseCrew
 from .llm import build_provider
@@ -25,10 +24,28 @@ from .fake import FakeCatalog
 from .models import RunStats
 
 
+def _adapter():
+    """Import the DataHub adapter on demand.
+
+    The SDK is an optional extra so the hosted demo image stays small, so a
+    missing install is an ordinary situation that deserves a real instruction
+    rather than a traceback.
+    """
+    try:
+        from .adapter import DataHubAdapter
+    except ImportError:
+        sys.exit(
+            "Talking to DataHub needs the optional SDK:\n"
+            "    uv sync --extra datahub\n"
+            "Or pass --fake to use the in-memory catalog."
+        )
+    return DataHubAdapter()
+
+
 def _catalog(use_fake: bool) -> Catalog:
     if use_fake:
         return FakeCatalog()
-    adapter = DataHubAdapter()
+    adapter = _adapter()
     if not adapter.ping():
         sys.exit(
             "DataHub is not reachable at "
@@ -65,7 +82,7 @@ def cmd_parity(args: argparse.Namespace) -> int:
     fake has not drifted from what DataHub actually returns.
     """
     fake = FakeCatalog()
-    live = DataHubAdapter()
+    live = _adapter()
     if not live.ping():
         sys.exit("DataHub unreachable — start it with `datahub docker quickstart`.")
 

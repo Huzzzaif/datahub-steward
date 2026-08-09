@@ -8,13 +8,23 @@ authors = [
 ]
 license = { text = "MIT" }
 requires-python = ">=3.12"
+# Base install runs the crews, the web demo and the whole test suite. It
+# deliberately excludes the DataHub SDK: the hosted demo uses the in-memory
+# catalog, and acryl-datahub is the overwhelming majority of the image size —
+# shipping it to a free dyno that never imports it just slows down cold starts.
 dependencies = [
-    "acryl-datahub>=1.7",
-    "anthropic>=0.121.0",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
     "uvicorn[standard]>=0.52.1",
 ]
+
+[project.optional-dependencies]
+# Needed to talk to a real DataHub: `steward seed`, `steward parity`,
+# `steward serve --datahub`.
+datahub = ["acryl-datahub>=1.7"]
+# Needed only for STEWARD_PROVIDER=anthropic. Ollama and Groq are plain HTTP.
+anthropic = ["anthropic>=0.121.0"]
+all = ["acryl-datahub>=1.7", "anthropic>=0.121.0"]
 
 [project.scripts]
 steward = "steward.cli:main"

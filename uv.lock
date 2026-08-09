@@ -1566,11 +1566,21 @@ name = "steward"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "acryl-datahub" },
-    { name = "anthropic" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "acryl-datahub" },
+    { name = "anthropic" },
+]
+anthropic = [
+    { name = "anthropic" },
+]
+datahub = [
+    { name = "acryl-datahub" },
 ]
 
 [package.dev-dependencies]
@@ -1580,12 +1590,15 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "acryl-datahub", specifier = ">=1.7" },
-    { name = "anthropic", specifier = ">=0.121.0" },
+    { name = "acryl-datahub", marker = "extra == 'all'", specifier = ">=1.7" },
+    { name = "acryl-datahub", marker = "extra == 'datahub'", specifier = ">=1.7" },
+    { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.121.0" },
+    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.121.0" },
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.1" },
 ]
+provides-extras = ["datahub", "anthropic", "all"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.1.1" }]
