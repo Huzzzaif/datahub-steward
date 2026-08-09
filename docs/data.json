@@ -435,21 +435,21 @@
     },
     {
      "name": "compose",
-     "detail": "45 words"
+     "detail": "39 words"
     },
     {
      "name": "record",
      "detail": "wrote blast_radius-raw-stripe-charges to the catalog"
     }
    ],
-   "answer": "raw.stripe.charges feeds churn_predictor (MLMODEL), 4 hops downstream. Changing raw.stripe.charges puts revenue reporting and churn prediction at risk. Twelve downstream assets are affected, including key reports and models. Analytics_eng, bi_team, finance_systems, and ml_platform teams must be consulted to ensure changes do not disrupt critical workflows like Executive Revenue Overview and Finance Month-End Close.",
+   "answer": "raw.stripe.charges feeds churn_predictor (MLMODEL), 4 hops downstream. Changing raw.stripe.charges puts 12 downstream assets at risk, including critical ones like churn_predictor and ltv_regressor. Teams analytics_eng, bi_team, finance_systems, and ml_platform must be consulted to assess potential impact on Executive Revenue Overview, Finance Month-End Close, and other key reports.",
    "stats": {
     "tool_calls": 2,
     "entities_inspected": 13,
     "prior_findings_reused": 0,
-    "input_tokens": 488,
-    "output_tokens": 78,
-    "wall_seconds": 0.89
+    "input_tokens": 489,
+    "output_tokens": 79,
+    "wall_seconds": 0.87
    },
    "finding": {
     "finding_id": "blast_radius-raw-stripe-charges",
@@ -470,7 +470,7 @@
      "detail": "reusing 1 existing finding(s) \u2014 skipping re-derivation"
     }
    ],
-   "answer": "Already known (blast_radius-raw-stripe-charges): raw.stripe.charges feeds churn_predictor (MLMODEL), 4 hops downstream. Changing raw.stripe.charges puts revenue reporting and churn prediction at risk. Twelve downstream assets are affected, including key reports and models. Analytics_eng, bi_team, finance_systems, and ml_platform teams must be consulted to ensure changes do not disrupt critical workflows like Executive Revenue Overview and Finance Month-End Close.",
+   "answer": "Already known (blast_radius-raw-stripe-charges): raw.stripe.charges feeds churn_predictor (MLMODEL), 4 hops downstream. Changing raw.stripe.charges puts 12 downstream assets at risk, including critical ones like churn_predictor and ltv_regressor. Teams analytics_eng, bi_team, finance_systems, and ml_platform must be consulted to assess potential impact on Executive Revenue Overview, Finance Month-End Close, and other key reports.",
    "stats": {
     "tool_calls": 1,
     "entities_inspected": 1,
@@ -517,7 +517,7 @@
     "prior_findings_reused": 0,
     "input_tokens": 479,
     "output_tokens": 60,
-    "wall_seconds": 0.73
+    "wall_seconds": 0.78
    },
    "finding": {
     "finding_id": "root_cause-churn-predictor",
@@ -528,7 +528,7 @@
   }
  },
  "live_url": "https://github.com/Huzzzaif/datahub-steward#try-it-in-ten-seconds",
- "api_base": "",
+ "api_base": "https://datahub-steward.onrender.com",
  "demo_change": "We want to rename raw.stripe.charges.amount_cents to amount_minor_units and change its type from NUMBER to VARCHAR to support zero-decimal currencies. What breaks?",
  "demo_symptom": "The churn_predictor model started scoring almost every customer as high-risk overnight. Nothing was deployed to the model itself. What upstream is most likely responsible?"
 }
