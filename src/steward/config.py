@@ -4,9 +4,32 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 Provider = Literal["ollama", "groq", "anthropic"]
+
+
+def _load_dotenv() -> None:
+    """Read a local .env if present, without taking a dependency for it.
+
+    Real environment variables always win, so this can never override what a
+    deploy platform injects. `.env` is gitignored — API keys belong there, not
+    in the repo.
+    """
+    for candidate in (Path.cwd() / ".env", Path(__file__).resolve().parents[2] / ".env"):
+        if not candidate.is_file():
+            continue
+        for line in candidate.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+        return
+
+
+_load_dotenv()
 
 
 @dataclass(frozen=True)

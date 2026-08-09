@@ -17,7 +17,7 @@ import sys
 from . import scenario as s
 from .adapter import DataHubAdapter
 from .agent import blast_radius_agent, root_cause_agent
-from .crew import BlastRadiusCrew
+from .crew import BlastRadiusCrew, RootCauseCrew
 from .llm import build_provider
 from .catalog import Catalog
 from .config import Config
@@ -108,10 +108,12 @@ def _run_agent(kind: str, question: str, use_fake: bool, single: bool) -> int:
     _check_provider(config)
     catalog = _catalog(use_fake)
 
-    # The crew is the default because it holds up on a small local model; the
-    # single free-form agent is better on a frontier one.
-    if kind == "blast" and not single:
-        result = BlastRadiusCrew(catalog, config).run(question)
+    # The crew is the default for both directions because it holds up on small
+    # models; the single free-form agent is the better shape on a frontier one
+    # and stays available behind --single.
+    if not single:
+        crew_cls = BlastRadiusCrew if kind == "blast" else RootCauseCrew
+        result = crew_cls(catalog, config).run(question)
         for stage in result.trace:
             print(f"  · {stage.name}: {stage.detail}")
         print()
@@ -131,7 +133,7 @@ def cmd_blast(args: argparse.Namespace) -> int:
 
 
 def cmd_cause(args: argparse.Namespace) -> int:
-    return _run_agent("cause", args.question, args.fake, single=True)
+    return _run_agent("cause", args.question, args.fake, getattr(args, "single", False))
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
@@ -225,7 +227,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="use the single free-form agent instead of the crew",
     )
-    add("cause", cmd_cause, "why is this broken?", needs_question=True)
+    cause = add("cause", cmd_cause, "why is this broken?", needs_question=True)
+    cause.add_argument(
+        "--single",
+        action="store_true",
+        help="use the single free-form agent instead of the crew",
+    )
     add("demo", cmd_demo, "two-run knowledge-compounding demo")
 
     serve = sub.add_parser("serve", help="run the web demo")
