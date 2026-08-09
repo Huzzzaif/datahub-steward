@@ -190,4 +190,4 @@ uv run steward parity  # requires a running DataHub
 
 ## Licence
 
-[MIT](LICENSE).
+[Apache License 2.0](LICENSE). See also [NOTICE](NOTICE).

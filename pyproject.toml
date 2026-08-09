@@ -6,7 +6,8 @@ readme = "README.md"
 authors = [
     { name = "huzzzaif", email = "huzaiffkhhan@gmail.com" }
 ]
-license = { text = "MIT" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.12"
 # Base install runs the crews, the web demo and the whole test suite. It
 # deliberately excludes the DataHub SDK: the hosted demo uses the in-memory
