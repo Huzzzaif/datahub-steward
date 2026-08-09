@@ -338,3 +338,118 @@ DEMO_SYMPTOM = (
     "high-risk overnight. Nothing was deployed to the model itself. "
     "What upstream is most likely responsible?"
 )
+
+
+#: Plain-English translation of the estate.
+#:
+#: The technical names are what a data team actually uses and what proves the
+#: DataHub integration is real, so they stay. But a demo that only lands for
+#: people who already know what a fact table is has excluded most of its
+#: audience. Each entry is (human name, what it is, why anyone should care).
+PLAIN: dict[str, tuple[str, str, str]] = {
+    RAW_CHARGES: (
+        "Payments taken",
+        "Every payment a customer has made — how much, in what currency, and whether it went through.",
+        "Every revenue number in the company is built from this.",
+    ),
+    RAW_REFUNDS: (
+        "Refunds given",
+        "Money we've handed back to customers.",
+        "Revenue is wrong if refunds aren't subtracted.",
+    ),
+    RAW_CUSTOMERS: (
+        "Customer list",
+        "Who our customers are, when they signed up, and what plan they're on.",
+        "Nothing about a customer can be worked out without it.",
+    ),
+    RAW_CHECKOUT: (
+        "Checkout activity",
+        "What people clicked on their way through the checkout.",
+        "Shows where people give up before paying.",
+    ),
+    RAW_TICKETS: (
+        "Support tickets",
+        "Complaints and questions customers have raised.",
+        "People who complain a lot are often about to leave.",
+    ),
+    DIM_CUSTOMER: (
+        "Customer profiles",
+        "The customer list, cleaned up and standardised.",
+        "The version everything else trusts.",
+    ),
+    FCT_ORDERS: (
+        "Orders and revenue",
+        "One row per completed order, with the money converted into dollars.",
+        "This is where 'how much did we make' gets answered.",
+    ),
+    CUSTOMER_LTV: (
+        "What each customer is worth",
+        "How much money each customer has brought in over the last year.",
+        "Used to decide who's worth keeping and how hard to try.",
+    ),
+    CUSTOMER_FEATURES: (
+        "The numbers the AI learns from",
+        "A tidy summary of each customer, prepared specifically for the AI models.",
+        "If these numbers are wrong, the AI is confidently wrong.",
+    ),
+    JOB_ORDERS: (
+        "Nightly orders job",
+        "Runs every morning to rebuild the orders table.",
+        "If it fails, today's revenue numbers are yesterday's.",
+    ),
+    JOB_FEATURES: (
+        "Hourly AI refresh job",
+        "Keeps the AI's input numbers up to date.",
+        "If it stalls, the AI is working from stale information.",
+    ),
+    JOB_TRAIN_CHURN: (
+        "Weekly AI retraining",
+        "Teaches the cancellation-predictor using the latest data.",
+        "A bad retrain quietly changes every prediction that follows.",
+    ),
+    JOB_TRAIN_LTV: (
+        "Value-model retraining",
+        "Retrains the not-yet-live customer value model.",
+        "Low stakes for now — this model isn't in use.",
+    ),
+    DASH_REVENUE: (
+        "Revenue dashboard",
+        "The chart the executive team looks at every week.",
+        "Wrong numbers here get repeated in meetings and decisions.",
+    ),
+    DASH_CHURN: (
+        "Cancellation dashboard",
+        "Tracks how well the AI is predicting who leaves.",
+        "How anyone would notice the AI has gone wrong.",
+    ),
+    DASH_FINANCE: (
+        "Finance month-end report",
+        "What Finance uses to close the books each month.",
+        "These numbers get reported outside the company. Errors are expensive.",
+    ),
+    MODEL_CHURN: (
+        "AI that predicts who will cancel",
+        "Scores every customer each night for how likely they are to leave.",
+        "Live in production — it decides who gets a retention discount, so bad scores cost real money.",
+    ),
+    MODEL_LTV: (
+        "AI that predicts customer value",
+        "Estimates what a customer will be worth in future.",
+        "Still being tested, not yet making decisions.",
+    ),
+}
+
+
+def plain(urn: str) -> tuple[str, str, str]:
+    """Human name, description, and why it matters. Falls back to the technical name."""
+    entity = BY_URN.get(urn)
+    return PLAIN.get(urn, (entity.name if entity else urn, "", ""))
+
+
+#: One sentence a non-technical person understands immediately, used to frame
+#: the whole demo.
+PLAIN_STAKES = (
+    "Someone renames one column in the payments table. Four steps later, the AI "
+    "that decides which customers get a discount starts making bad calls — and "
+    "nothing anywhere says the two are connected."
+)

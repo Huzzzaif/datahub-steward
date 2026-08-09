@@ -161,10 +161,34 @@ def health() -> dict:
 #: How entities are grouped in the UI's map of the estate. Order matters — it is
 #: the left-to-right reading order of the diagram.
 _LAYERS = [
-    ("Sources", "Landed from outside systems", lambda e: e.name.startswith("raw.")),
-    ("Modelled", "Built by dbt", lambda e: e.entity_type == "DATASET"),
-    ("Pipelines", "Airflow jobs", lambda e: e.entity_type == "DATA_JOB"),
-    ("Consumers", "What people and models actually use", lambda e: True),
+    (
+        "Sources",
+        "Raw data we collect",
+        "Landed from outside systems",
+        "Straight from Stripe, the CRM, the website. Nobody has cleaned it yet.",
+        lambda e: e.name.startswith("raw."),
+    ),
+    (
+        "Modelled",
+        "Cleaned-up tables",
+        "Built by dbt",
+        "The raw data tidied and combined into things people can actually use.",
+        lambda e: e.entity_type == "DATASET",
+    ),
+    (
+        "Pipelines",
+        "Automated jobs",
+        "Airflow jobs",
+        "Scheduled jobs that rebuild the tables above on a timer.",
+        lambda e: e.entity_type == "DATA_JOB",
+    ),
+    (
+        "Consumers",
+        "What the business actually uses",
+        "Dashboards and ML models",
+        "The dashboards people read and the AI models making live decisions.",
+        lambda e: True,
+    ),
 ]
 
 
@@ -177,17 +201,22 @@ def graph() -> dict:
     the company before they are asked a question about it.
     """
     layers: list[dict] = [
-        {"name": name, "blurb": blurb, "entities": []} for name, blurb, _ in _LAYERS
+        {"name": tech, "plain_name": plain_n, "blurb": tech_b, "plain_blurb": plain_b, "entities": []}
+        for tech, plain_n, tech_b, plain_b, _ in _LAYERS
     ]
     for entity in s.ENTITIES:
-        for index, (_, _, matches) in enumerate(_LAYERS):
+        for index, (_, _, _, _, matches) in enumerate(_LAYERS):
             if matches(entity):
+                plain_name, plain_desc, why = s.plain(entity.urn)
                 layers[index]["entities"].append(
                     {
                         "urn": entity.urn,
                         "name": entity.name,
+                        "plain_name": plain_name,
                         "type": entity.entity_type,
                         "description": entity.description,
+                        "plain_description": plain_desc,
+                        "why": why,
                         "owners": [o.split(":")[-1] for o in entity.owners],
                         "columns": [
                             {"name": c.name, "type": c.type, "description": c.description}
@@ -196,7 +225,7 @@ def graph() -> dict:
                     }
                 )
                 break
-    return {"layers": layers}
+    return {"layers": layers, "stakes": s.PLAIN_STAKES}
 
 
 @app.get("/api/lineage")
@@ -218,6 +247,7 @@ def lineage(urn: str, direction: str = "downstream") -> dict:
             {
                 "urn": e.entity.urn,
                 "name": e.entity.name,
+                "plain_name": s.plain(e.entity.urn)[0],
                 "type": e.entity.entity_type,
                 "degree": e.degree,
                 "owners": [o.split(":")[-1] for o in e.entity.owners],
@@ -255,10 +285,19 @@ def index() -> str:
 # The page is one self-contained string: no build step, no CDN, no framework.
 # A judge should be able to read the whole front end in one sitting, and the
 # deployed image should not depend on anything it doesn't ship.
+
+# The page is one self-contained string: no build step, no CDN, no framework.
+# A judge should be able to read the whole front end in one sitting, and the
+# deployed image should not depend on anything it doesn't ship.
+#
+# Plain-English mode is the default. The technical names are the ones a data
+# team really uses and are what makes the DataHub integration credible — but a
+# demo only legible to people who already know what a fact table is has thrown
+# away most of its audience before it starts.
 _PAGE = r"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Steward — DataHub agents whose findings compound</title>
+<title>Steward — agents that remember what they work out</title>
 <style>
   :root{--bg:#0B0C0E;--panel:#15171A;--panel2:#1B1E22;--line:#24272B;--ink:#ECEDEE;
         --dim:#9BA1A8;--accent:#6E9BFF;--warn:#E9A14B;--crit:#F2736B;--ok:#4ECB84;
@@ -266,28 +305,36 @@ _PAGE = r"""<!doctype html>
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
        font:15px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 90px}
-  h1{font-size:25px;margin:0 0 4px}
+  .wrap{max-width:1080px;margin:0 auto;padding:26px 20px 90px}
+  h1{font-size:25px;margin:0 0 6px}
   h2{font-size:15px;margin:0 0 3px}
   .sub{color:var(--dim);margin:0 0 8px}
+  .stakes{background:rgba(242,115,107,.09);border-left:3px solid var(--crit);
+          padding:12px 14px;border-radius:0 8px 8px 0;margin:0 0 18px;font-size:15px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
         padding:16px;margin-bottom:14px}
   .step{display:inline-block;background:var(--accent);color:#08101F;font-weight:700;
         font-size:11px;border-radius:5px;padding:2px 7px;margin-right:8px}
-  .layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+  .toggle{display:flex;gap:0;border:1px solid var(--line);border-radius:8px;
+          overflow:hidden;margin-left:auto}
+  .toggle button{background:transparent;border:0;color:var(--dim);padding:6px 12px;
+                 font:inherit;font-size:12.5px;cursor:pointer}
+  .toggle button.on{background:var(--accent);color:#08101F;font-weight:650}
+  .head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px}
   .layer h3{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim);
             margin:0 0 2px}
   .layer p{font-size:12px;color:var(--dim);margin:0 0 8px}
   .ent{display:block;width:100%;text-align:left;background:var(--panel2);
        border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;
-       color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
+       color:var(--ink);font:inherit;font-size:13.5px;cursor:pointer}
   .ent:hover{border-color:var(--accent)}
-  .ent.sel{border-color:var(--accent);background:rgba(110,155,255,.12)}
-  .ent.hit{border-color:var(--crit);background:rgba(242,115,107,.13)}
+  .ent.sel{border-color:var(--accent);background:rgba(110,155,255,.13)}
+  .ent.hit{border-color:var(--crit);background:rgba(242,115,107,.14)}
   .ent .t{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim)}
   .ent.mlmodel .t{color:var(--model)} .ent.dashboard .t{color:var(--dash)}
-  .ent .own{font-size:11px;color:var(--dim)}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .ent .own{font-size:11px;color:var(--dim);margin-top:2px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
   button.act{background:var(--accent);color:#08101F;border:0;border-radius:9px;
              padding:9px 15px;font:inherit;font-weight:650;cursor:pointer}
   button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line);
@@ -298,8 +345,10 @@ _PAGE = r"""<!doctype html>
   .cols{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
   .col{background:var(--bg);border:1px solid var(--line);border-radius:6px;
        padding:3px 8px;font-size:12px;color:var(--dim);font-family:ui-monospace,monospace}
+  .why{border-left:2px solid var(--warn);padding-left:10px;color:var(--dim);
+       font-size:13px;margin:10px 0}
   .imp{display:flex;justify-content:space-between;gap:10px;padding:6px 0;
-       border-bottom:1px dashed var(--line);font-size:13px}
+       border-bottom:1px dashed var(--line);font-size:13.5px}
   .imp:last-child{border-bottom:0}
   .deg{color:var(--dim);font-size:12px}
   .stage{display:flex;gap:10px;padding:6px 0;font-size:13.5px;
@@ -325,50 +374,58 @@ _PAGE = r"""<!doctype html>
 </style></head><body><div class="wrap">
 
 <h1>Steward</h1>
-<p class="sub">Agents that read a data catalogue, work out what a change would break —
-and write the answer back so nobody has to work it out again.</p>
+<p class="sub">Agents that work out what a change would break — and write the answer
+down where the next person will find it.</p>
+
+<p class="stakes" id="stakes"></p>
 
 <div class="card">
-  <h2><span class="step">1</span>This is Northwind's data estate</h2>
-  <p class="sub">A made-up but ordinary company. Click anything to see what depends on it.
-  Nothing here is guessed — it is real lineage from DataHub.</p>
+  <div class="head">
+    <h2 style="margin:0"><span class="step">1</span>Meet the company</h2>
+    <div class="toggle">
+      <button id="tPlain" class="on">Plain English</button>
+      <button id="tTech">Technical</button>
+    </div>
+  </div>
+  <p class="sub" id="mapHint">Everything one online business keeps track of. Click any box
+  to see what would break if it changed.</p>
   <div class="layers" id="layers"></div>
 </div>
 
 <div class="card" id="detail" style="display:none">
   <h2><span class="step">2</span><span id="dname"></span></h2>
   <p class="sub" id="ddesc"></p>
+  <div class="why" id="dwhy" style="display:none"></div>
   <div id="dcols" class="cols"></div>
 
   <div style="margin-top:14px">
-    <b id="impact-h">Downstream</b>
-    <span class="muted" id="impact-n"></span>
+    <b id="impact-h"></b> <span class="muted" id="impact-n"></span>
     <div id="impact" style="margin-top:6px"></div>
   </div>
 
   <div class="row">
-    <button class="act" id="askBlast">Ask the crew: what breaks if I change this?</button>
-    <button class="ghost" id="askCause">Ask: why is this broken?</button>
+    <button class="act" id="askBlast">Ask the agents: what breaks if I change this?</button>
+    <button class="ghost" id="askCause">Ask: why has this gone wrong?</button>
   </div>
-  <div class="hint">The list above is a plain graph lookup — instant, no AI. The crew adds
-  the judgment: which of those actually matter, who owns them, and what to do.</div>
+  <div class="hint">That list is just the catalogue's map — instant, no AI involved.
+  The agents add what a map can't tell you: which of those actually matter, who to
+  warn, and what to do about it.</div>
 </div>
 
 <div class="card">
   <h2><span class="step">3</span>Or ask in your own words</h2>
   <textarea id="q">__DEMO_CHANGE__</textarea>
   <div class="row">
-    <button class="act" id="run">Run the crew</button>
+    <button class="act" id="run">Ask the agents</button>
     <button class="ghost" id="again" disabled>Ask the same thing again</button>
-    <button class="ghost" id="reset">Reset catalogue</button>
+    <button class="ghost" id="reset">Start over</button>
   </div>
-  <div class="hint">Ask twice. The second run reads the finding the first one wrote into
-  the catalogue instead of re-deriving it — watch <b>entities inspected</b> and
-  <b>tokens</b>.</div>
+  <div class="hint">Ask, then ask again. The second time it doesn't work anything out —
+  it reads what it wrote down the first time. Watch the numbers at the bottom.</div>
 </div>
 
 <div class="card" id="out" style="display:none">
-  <h2><span class="step">4</span>What the crew did</h2>
+  <h2><span class="step">4</span>What the agents did</h2>
   <div id="stages" style="margin-top:8px"></div>
   <div id="result"></div>
 </div>
@@ -377,25 +434,34 @@ and write the answer back so nobody has to work it out again.</p>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => (s||"").replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
 const DEMOS = { blast: `__DEMO_CHANGE__`, cause: `__DEMO_SYMPTOM__` };
-let selected = null, mode = "blast";
+let selected = null, mode = "blast", plainMode = true, GRAPH = null;
+
+const label = (e) => plainMode ? (e.plain_name || e.name) : e.name;
 
 async function loadGraph(){
-  const g = await (await fetch("/api/graph")).json();
-  $("layers").innerHTML = g.layers.map(l => `
-    <div class="layer"><h3>${esc(l.name)}</h3><p>${esc(l.blurb)}</p>
+  GRAPH = await (await fetch("/api/graph")).json();
+  $("stakes").textContent = GRAPH.stakes;
+  render();
+}
+
+function render(){
+  $("layers").innerHTML = GRAPH.layers.map(l => `
+    <div class="layer">
+      <h3>${esc(plainMode ? l.plain_name : l.name)}</h3>
+      <p>${esc(plainMode ? l.plain_blurb : l.blurb)}</p>
       ${l.entities.map(e => `
         <button class="ent ${e.type.toLowerCase()}" data-urn="${esc(e.urn)}">
           <div class="t">${esc(e.type)}</div>
-          <div>${esc(e.name)}</div>
-          ${e.owners.length ? `<div class="own">${esc(e.owners.join(", "))}</div>` : ""}
+          <div>${esc(label(e))}</div>
+          ${e.owners.length ? `<div class="own">looked after by ${esc(e.owners.join(", "))}</div>` : ""}
         </button>`).join("")}
     </div>`).join("");
   document.querySelectorAll(".ent").forEach(b => b.onclick = () => select(b.dataset.urn));
-  window._graph = g;
+  if(selected) select(selected);
 }
 
 function findEntity(urn){
-  for(const l of window._graph.layers) for(const e of l.entities) if(e.urn === urn) return e;
+  for(const l of GRAPH.layers) for(const e of l.entities) if(e.urn === urn) return e;
   return null;
 }
 
@@ -412,21 +478,24 @@ async function select(urn){
   const d = await (await fetch(`/api/lineage?urn=${encodeURIComponent(urn)}&direction=${dir}`)).json();
 
   $("detail").style.display = "block";
-  $("dname").textContent = e.name;
-  $("ddesc").textContent = e.description || "";
-  $("dcols").innerHTML = (e.columns||[]).map(c =>
+  $("dname").textContent = label(e);
+  $("ddesc").textContent = plainMode ? (e.plain_description || "") : (e.description || "");
+  $("dwhy").style.display = (plainMode && e.why) ? "block" : "none";
+  $("dwhy").textContent = e.why || "";
+  $("dcols").innerHTML = plainMode ? "" : (e.columns||[]).map(c =>
     `<span class="col" title="${esc(c.description||'')}">${esc(c.name)}</span>`).join("");
-  $("impact-h").textContent = dir === "upstream" ? "Feeds on" : "Breaks if this changes";
-  $("impact-n").textContent = ` — ${d.count} ${d.count === 1 ? "asset" : "assets"}`;
+
+  $("impact-h").textContent = dir === "upstream"
+    ? (plainMode ? "This is built from" : "Upstream")
+    : (plainMode ? "Change this and these break" : "Blast radius");
+  $("impact-n").textContent = ` — ${d.count} ${d.count === 1 ? "thing" : "things"}`;
   $("impact").innerHTML = d.edges.length
     ? d.edges.map(x => `<div class="imp">
-        <span>${esc(x.name)} <span class="deg">· ${esc(x.type)}</span></span>
-        <span class="deg">${x.degree} hop${x.degree===1?"":"s"}${x.owners.length? " · "+esc(x.owners.join(", ")):""}</span>
+        <span>${esc(plainMode ? (x.plain_name || x.name) : x.name)}</span>
+        <span class="deg">${x.degree} step${x.degree===1?"":"s"} away${x.owners.length? " · "+esc(x.owners.join(", ")):""}</span>
       </div>`).join("")
-    : `<div class="muted">Nothing — this is a leaf.</div>`;
+    : `<div class="muted">Nothing — this is the end of the line.</div>`;
 
-  // Light up the affected entities in the map above, so the blast radius is
-  // visible on the picture rather than only in a list.
   const hits = new Set(d.edges.map(x => x.urn));
   document.querySelectorAll(".ent").forEach(b => {
     if(hits.has(b.dataset.urn)) b.classList.add("hit");
@@ -440,9 +509,9 @@ async function select(urn){
 
 async function run(){
   const question = $("q").value.trim(); if(!question) return;
-  $("run").disabled = $("again").disabled = $("askBlast").disabled = $("askCause").disabled = true;
+  ["run","again","askBlast","askCause"].forEach(i => $(i).disabled = true);
   $("out").style.display = "block";
-  $("stages").innerHTML = `<div class="muted">running…</div>`; $("result").innerHTML = "";
+  $("stages").innerHTML = `<div class="muted">thinking…</div>`; $("result").innerHTML = "";
 
   const resp = await fetch("/api/ask", {method:"POST",
     headers:{"Content-Type":"application/json"}, body: JSON.stringify({question, mode})});
@@ -468,23 +537,23 @@ async function run(){
         $("result").innerHTML =
           (f ? `<div class="sev ${f.severity}">${f.severity}</div>` : "") +
           `<p class="answer">${esc(d.answer)}</p>` +
-          (f ? `<p class="hint">Written into the catalogue as <code>${esc(f.finding_id)}</code>
-                by <code>${esc(f.agent)}</code>, citing ${f.evidence_count} entities as evidence.</p>` : "") +
+          (f ? `<p class="hint">Written into the catalogue as <code>${esc(f.finding_id)}</code>,
+                citing ${f.evidence_count} things it checked.</p>` : "") +
           `<div class="stats">
-             <span><b>${st.entities_inspected}</b> entities inspected</span>
-             <span><b>${st.input_tokens + st.output_tokens}</b> tokens</span>
-             <span><b>${st.prior_findings_reused}</b> prior findings reused</span>
+             <span><b>${st.entities_inspected}</b> things checked</span>
+             <span><b>${st.input_tokens + st.output_tokens}</b> tokens used</span>
+             <span><b>${st.prior_findings_reused}</b> earlier answers reused</span>
              <span><b>${st.wall_seconds}s</b></span>
            </div>` +
           (st.prior_findings_reused > 0
-            ? `<p class="banner">This run did no investigation. It read what the previous run
-               recorded in DataHub and cited it. That is the point: the catalogue got
-               permanently smarter, and the next person inherits it.</p>` : "");
+            ? `<p class="banner">It didn't work anything out this time. It read the note it
+               left in the catalogue last time and repeated it. That's the whole idea —
+               the answer is stored where the next person will trip over it.</p>` : "");
         if(selected) select(selected);
       }
     }
   }
-  $("run").disabled = $("again").disabled = $("askBlast").disabled = $("askCause").disabled = false;
+  ["run","again","askBlast","askCause"].forEach(i => $(i).disabled = false);
 }
 
 $("run").onclick = run;
@@ -498,6 +567,14 @@ $("reset").onclick = async () => {
   $("out").style.display = "none"; $("again").disabled = true;
   if(selected) select(selected);
 };
+$("tPlain").onclick = () => { plainMode = true;
+  $("tPlain").classList.add("on"); $("tTech").classList.remove("on");
+  $("mapHint").textContent = "Everything one online business keeps track of. Click any box to see what would break if it changed.";
+  render(); };
+$("tTech").onclick = () => { plainMode = false;
+  $("tTech").classList.add("on"); $("tPlain").classList.remove("on");
+  $("mapHint").textContent = "The real table, job and model names, as they appear in DataHub.";
+  render(); };
 
 loadGraph();
 </script>
