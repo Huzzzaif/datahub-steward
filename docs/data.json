@@ -1,0 +1,533 @@
+{
+ "graph": {
+  "layers": [
+   {
+    "name": "Sources",
+    "plain_name": "Raw data we collect",
+    "blurb": "Landed from outside systems",
+    "plain_blurb": "Straight from Stripe, the CRM, the website. Nobody has cleaned it yet.",
+    "entities": [
+     {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.stripe.charges,PROD)",
+      "name": "raw.stripe.charges",
+      "plain_name": "Payments taken",
+      "type": "DATASET",
+      "description": "Raw Stripe charge events, landed by Fivetran every 15 minutes.",
+      "plain_description": "Every payment a customer has made \u2014 how much, in what currency, and whether it went through.",
+      "why": "Every revenue number in the company is built from this.",
+      "owners": [
+       "payments_team"
+      ],
+      "columns": [
+       "charge_id",
+       "customer_id",
+       "amount_cents",
+       "currency",
+       "status",
+       "created_at"
+      ]
+     },
+     {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.events.checkout_events,PROD)",
+      "name": "raw.events.checkout_events",
+      "plain_name": "Checkout activity",
+      "type": "DATASET",
+      "description": "Client-side checkout funnel events.",
+      "plain_description": "What people clicked on their way through the checkout.",
+      "why": "Shows where people give up before paying.",
+      "owners": [
+       "growth_eng"
+      ],
+      "columns": [
+       "event_id",
+       "session_id",
+       "customer_id",
+       "step",
+       "occurred_at"
+      ]
+     },
+     {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.crm.customers,PROD)",
+      "name": "raw.crm.customers",
+      "plain_name": "Customer list",
+      "type": "DATASET",
+      "description": "Customer records synced from the CRM.",
+      "plain_description": "Who our customers are, when they signed up, and what plan they're on.",
+      "why": "Nothing about a customer can be worked out without it.",
+      "owners": [
+       "crm_ops"
+      ],
+      "columns": [
+       "customer_id",
+       "email",
+       "signup_date",
+       "plan_tier"
+      ]
+     },
+     {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.stripe.refunds,PROD)",
+      "name": "raw.stripe.refunds",
+      "plain_name": "Refunds given",
+      "type": "DATASET",
+      "description": "Raw Stripe refund events. Netted off revenue in fct_orders.",
+      "plain_description": "Money we've handed back to customers.",
+      "why": "Revenue is wrong if refunds aren't subtracted.",
+      "owners": [
+       "payments_team"
+      ],
+      "columns": [
+       "refund_id",
+       "charge_id",
+       "amount_cents",
+       "refunded_at"
+      ]
+     },
+     {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.support.tickets,PROD)",
+      "name": "raw.support.tickets",
+      "plain_name": "Support tickets",
+      "type": "DATASET",
+      "description": "Support tickets from Zendesk. Ticket volume is a churn signal.",
+      "plain_description": "Complaints and questions customers have raised.",
+      "why": "People who complain a lot are often about to leave.",
+      "owners": [
+       "support_ops"
+      ],
+      "columns": [
+       "ticket_id",
+       "customer_id",
+       "severity",
+       "opened_at",
+       "resolved_at"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "Modelled",
+    "plain_name": "Cleaned-up tables",
+    "blurb": "Built by dbt",
+    "plain_blurb": "The raw data tidied and combined into things people can actually use.",
+    "entities": [
+     {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.dim_customer,PROD)",
+      "name": "analytics.core.dim_customer",
+      "plain_name": "Customer profiles",
+      "type": "DATASET",
+      "description": "Conformed customer dimension.",
+      "plain_description": "The customer list, cleaned up and standardised.",
+      "why": "The version everything else trusts.",
+      "owners": [
+       "analytics_eng"
+      ],
+      "columns": [
+       "customer_key",
+       "plan_tier",
+       "signup_date"
+      ]
+     },
+     {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.fct_orders,PROD)",
+      "name": "analytics.core.fct_orders",
+      "plain_name": "Orders and revenue",
+      "type": "DATASET",
+      "description": "One row per completed order, with revenue in USD.",
+      "plain_description": "One row per completed order, with the money converted into dollars.",
+      "why": "This is where 'how much did we make' gets answered.",
+      "owners": [
+       "analytics_eng"
+      ],
+      "columns": [
+       "order_id",
+       "customer_key",
+       "revenue_usd",
+       "ordered_at"
+      ]
+     },
+     {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.marts.customer_ltv,PROD)",
+      "name": "analytics.marts.customer_ltv",
+      "plain_name": "What each customer is worth",
+      "type": "DATASET",
+      "description": "Rolling 12-month lifetime value per customer.",
+      "plain_description": "How much money each customer has brought in over the last year.",
+      "why": "Used to decide who's worth keeping and how hard to try.",
+      "owners": [
+       "analytics_eng"
+      ],
+      "columns": [
+       "customer_key",
+       "ltv_usd",
+       "orders_count"
+      ]
+     },
+     {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.features.customer_features,PROD)",
+      "name": "analytics.features.customer_features",
+      "plain_name": "The numbers the AI learns from",
+      "type": "DATASET",
+      "description": "Feature table serving the churn and LTV models.",
+      "plain_description": "A tidy summary of each customer, prepared specifically for the AI models.",
+      "why": "If these numbers are wrong, the AI is confidently wrong.",
+      "owners": [
+       "ml_platform"
+      ],
+      "columns": [
+       "customer_key",
+       "ltv_usd",
+       "orders_last_30d",
+       "avg_order_value_usd",
+       "open_tickets_30d"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "Pipelines",
+    "plain_name": "Automated jobs",
+    "blurb": "Airflow jobs",
+    "plain_blurb": "Scheduled jobs that rebuild the tables above on a timer.",
+    "entities": [
+     {
+      "urn": "urn:li:dataJob:(urn:li:dataFlow:(airflow,daily_analytics,PROD),build_fct_orders)",
+      "name": "build_fct_orders",
+      "plain_name": "Nightly orders job",
+      "type": "DATA_JOB",
+      "description": "Airflow task materialising fct_orders each morning.",
+      "plain_description": "Runs every morning to rebuild the orders table.",
+      "why": "If it fails, today's revenue numbers are yesterday's.",
+      "owners": [
+       "analytics_eng"
+      ],
+      "columns": []
+     },
+     {
+      "urn": "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_features,PROD),build_customer_features)",
+      "name": "build_customer_features",
+      "plain_name": "Hourly AI refresh job",
+      "type": "DATA_JOB",
+      "description": "Airflow task refreshing the ML feature table hourly.",
+      "plain_description": "Keeps the AI's input numbers up to date.",
+      "why": "If it stalls, the AI is working from stale information.",
+      "owners": [
+       "ml_platform"
+      ],
+      "columns": []
+     },
+     {
+      "urn": "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_churn_predictor)",
+      "name": "train_churn_predictor",
+      "plain_name": "Weekly AI retraining",
+      "type": "DATA_JOB",
+      "description": "Weekly retraining run for the production churn model.",
+      "plain_description": "Teaches the cancellation-predictor using the latest data.",
+      "why": "A bad retrain quietly changes every prediction that follows.",
+      "owners": [
+       "ml_platform"
+      ],
+      "columns": []
+     },
+     {
+      "urn": "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_ltv_regressor)",
+      "name": "train_ltv_regressor",
+      "plain_name": "Value-model retraining",
+      "type": "DATA_JOB",
+      "description": "Ad-hoc training run for the staging LTV regressor.",
+      "plain_description": "Retrains the not-yet-live customer value model.",
+      "why": "Low stakes for now \u2014 this model isn't in use.",
+      "owners": [
+       "ml_platform"
+      ],
+      "columns": []
+     }
+    ]
+   },
+   {
+    "name": "Consumers",
+    "plain_name": "What the business actually uses",
+    "blurb": "Dashboards and ML models",
+    "plain_blurb": "The dashboards people read and the AI models making live decisions.",
+    "entities": [
+     {
+      "urn": "urn:li:dashboard:(looker,executive_revenue_overview)",
+      "name": "Executive Revenue Overview",
+      "plain_name": "Revenue dashboard",
+      "type": "DASHBOARD",
+      "description": "Board-level revenue reporting. Reviewed weekly by the exec team.",
+      "plain_description": "The chart the executive team looks at every week.",
+      "why": "Wrong numbers here get repeated in meetings and decisions.",
+      "owners": [
+       "bi_team"
+      ],
+      "columns": []
+     },
+     {
+      "urn": "urn:li:dashboard:(looker,churn_monitoring)",
+      "name": "Churn Monitoring",
+      "plain_name": "Cancellation dashboard",
+      "type": "DASHBOARD",
+      "description": "Tracks churn model scores against actual churn.",
+      "plain_description": "Tracks how well the AI is predicting who leaves.",
+      "why": "How anyone would notice the AI has gone wrong.",
+      "owners": [
+       "bi_team"
+      ],
+      "columns": []
+     },
+     {
+      "urn": "urn:li:dashboard:(looker,finance_month_end_close)",
+      "name": "Finance Month-End Close",
+      "plain_name": "Finance month-end report",
+      "type": "DASHBOARD",
+      "description": "Used by Finance to close the books each month. Numbers here are reported externally, so a silent change upstream is expensive.",
+      "plain_description": "What Finance uses to close the books each month.",
+      "why": "These numbers get reported outside the company. Errors are expensive.",
+      "owners": [
+       "finance_systems"
+      ],
+      "columns": []
+     },
+     {
+      "urn": "urn:li:mlModel:(urn:li:dataPlatform:mlflow,churn_predictor,PROD)",
+      "name": "churn_predictor",
+      "plain_name": "AI that predicts who will cancel",
+      "type": "MLMODEL",
+      "description": "Production churn model, v3. Scores every active customer nightly; output drives the retention discount campaign.",
+      "plain_description": "Scores every customer each night for how likely they are to leave.",
+      "why": "Live in production \u2014 it decides who gets a retention discount, so bad scores cost real money.",
+      "owners": [
+       "ml_platform"
+      ],
+      "columns": []
+     },
+     {
+      "urn": "urn:li:mlModel:(urn:li:dataPlatform:mlflow,ltv_regressor,PROD)",
+      "name": "ltv_regressor",
+      "plain_name": "AI that predicts customer value",
+      "type": "MLMODEL",
+      "description": "Staging LTV regressor, not yet serving traffic.",
+      "plain_description": "Estimates what a customer will be worth in future.",
+      "why": "Still being tested, not yet making decisions.",
+      "owners": [
+       "ml_platform"
+      ],
+      "columns": []
+     }
+    ]
+   }
+  ],
+  "stakes": "Someone renames one column in the payments table. Four steps later, the AI that decides which customers get a discount starts making bad calls \u2014 and nothing anywhere says the two are connected."
+ },
+ "adjacency": {
+  "down": {
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.crm.customers,PROD)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.dim_customer,PROD)"
+   ],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.stripe.charges,PROD)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.fct_orders,PROD)",
+    "urn:li:dataJob:(urn:li:dataFlow:(airflow,daily_analytics,PROD),build_fct_orders)"
+   ],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.events.checkout_events,PROD)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.fct_orders,PROD)",
+    "urn:li:dataJob:(urn:li:dataFlow:(airflow,daily_analytics,PROD),build_fct_orders)"
+   ],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.stripe.refunds,PROD)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.fct_orders,PROD)"
+   ],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.fct_orders,PROD)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.marts.customer_ltv,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.features.customer_features,PROD)",
+    "urn:li:dashboard:(looker,executive_revenue_overview)",
+    "urn:li:dashboard:(looker,finance_month_end_close)"
+   ],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.dim_customer,PROD)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.marts.customer_ltv,PROD)"
+   ],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.marts.customer_ltv,PROD)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.features.customer_features,PROD)",
+    "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_features,PROD),build_customer_features)",
+    "urn:li:dashboard:(looker,executive_revenue_overview)",
+    "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_ltv_regressor)"
+   ],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.support.tickets,PROD)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.features.customer_features,PROD)"
+   ],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.features.customer_features,PROD)": [
+    "urn:li:dashboard:(looker,churn_monitoring)",
+    "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_churn_predictor)"
+   ],
+   "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_churn_predictor)": [
+    "urn:li:mlModel:(urn:li:dataPlatform:mlflow,churn_predictor,PROD)"
+   ],
+   "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_ltv_regressor)": [
+    "urn:li:mlModel:(urn:li:dataPlatform:mlflow,ltv_regressor,PROD)"
+   ]
+  },
+  "up": {
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.stripe.charges,PROD)": [],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.events.checkout_events,PROD)": [],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.crm.customers,PROD)": [],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.stripe.refunds,PROD)": [],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.support.tickets,PROD)": [],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.dim_customer,PROD)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.crm.customers,PROD)"
+   ],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.fct_orders,PROD)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.stripe.charges,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.events.checkout_events,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.stripe.refunds,PROD)"
+   ],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.marts.customer_ltv,PROD)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.fct_orders,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.dim_customer,PROD)"
+   ],
+   "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.features.customer_features,PROD)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.marts.customer_ltv,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.fct_orders,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.support.tickets,PROD)"
+   ],
+   "urn:li:dataJob:(urn:li:dataFlow:(airflow,daily_analytics,PROD),build_fct_orders)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.stripe.charges,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,raw.events.checkout_events,PROD)"
+   ],
+   "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_features,PROD),build_customer_features)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.marts.customer_ltv,PROD)"
+   ],
+   "urn:li:dashboard:(looker,executive_revenue_overview)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.fct_orders,PROD)",
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.marts.customer_ltv,PROD)"
+   ],
+   "urn:li:dashboard:(looker,churn_monitoring)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.features.customer_features,PROD)"
+   ],
+   "urn:li:dashboard:(looker,finance_month_end_close)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.core.fct_orders,PROD)"
+   ],
+   "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_churn_predictor)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.features.customer_features,PROD)"
+   ],
+   "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_ltv_regressor)": [
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.marts.customer_ltv,PROD)"
+   ],
+   "urn:li:mlModel:(urn:li:dataPlatform:mlflow,churn_predictor,PROD)": [
+    "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_churn_predictor)"
+   ],
+   "urn:li:mlModel:(urn:li:dataPlatform:mlflow,ltv_regressor,PROD)": [
+    "urn:li:dataJob:(urn:li:dataFlow:(airflow,ml_training,PROD),train_ltv_regressor)"
+   ]
+  }
+ },
+ "runs": {
+  "blast_cold": {
+   "question": "We want to rename raw.stripe.charges.amount_cents to amount_minor_units and change its type from NUMBER to VARCHAR to support zero-decimal currencies. What breaks?",
+   "stages": [
+    {
+     "name": "resolve",
+     "detail": "named directly in the question: raw.stripe.charges"
+    },
+    {
+     "name": "traverse",
+     "detail": "12 downstream entities (code, no model)"
+    },
+    {
+     "name": "assess",
+     "detail": "model flagged 5 high-risk assets"
+    },
+    {
+     "name": "compose",
+     "detail": "33 words"
+    },
+    {
+     "name": "record",
+     "detail": "wrote blast_radius-raw-stripe-charges to the catalog"
+    }
+   ],
+   "answer": "raw.stripe.charges feeds churn_predictor (MLMODEL), 4 hops downstream. Changing raw.stripe.charges affects 12 downstream assets, including churn_predictor and ltv_regressor. This puts revenue forecasting and financial close at risk. Teams analytics_eng, bi_team, finance_systems, and ml_platform must be consulted to ensure a safe implementation.",
+   "stats": {
+    "tool_calls": 2,
+    "entities_inspected": 13,
+    "prior_findings_reused": 0,
+    "input_tokens": 489,
+    "output_tokens": 70,
+    "wall_seconds": 0.72
+   },
+   "finding": {
+    "finding_id": "blast_radius-raw-stripe-charges",
+    "severity": "critical",
+    "evidence_count": 12
+   },
+   "provider": "groq"
+  },
+  "blast_warm": {
+   "question": "We want to rename raw.stripe.charges.amount_cents to amount_minor_units and change its type from NUMBER to VARCHAR to support zero-decimal currencies. What breaks?",
+   "stages": [
+    {
+     "name": "resolve",
+     "detail": "named directly in the question: raw.stripe.charges"
+    },
+    {
+     "name": "prior",
+     "detail": "reusing 1 existing finding(s) \u2014 skipping re-derivation"
+    }
+   ],
+   "answer": "Already known (blast_radius-raw-stripe-charges): raw.stripe.charges feeds churn_predictor (MLMODEL), 4 hops downstream. Changing raw.stripe.charges affects 12 downstream assets, including churn_predictor and ltv_regressor. This puts revenue forecasting and financial close at risk. Teams analytics_eng, bi_team, finance_systems, and ml_platform must be consulted to ensure a safe implementation.",
+   "stats": {
+    "tool_calls": 1,
+    "entities_inspected": 1,
+    "prior_findings_reused": 1,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "wall_seconds": 0.0
+   },
+   "finding": {
+    "finding_id": "blast_radius-raw-stripe-charges",
+    "severity": "critical",
+    "evidence_count": 12
+   },
+   "provider": "groq"
+  },
+  "cause": {
+   "question": "The churn_predictor model started scoring almost every customer as high-risk overnight. Nothing was deployed to the model itself. What upstream is most likely responsible?",
+   "stages": [
+    {
+     "name": "resolve",
+     "detail": "named directly in the question: churn_predictor"
+    },
+    {
+     "name": "traverse",
+     "detail": "10 upstream entities (code, no model)"
+    },
+    {
+     "name": "rank",
+     "detail": "model ranked 4 candidate causes"
+    },
+    {
+     "name": "compose",
+     "detail": "34 words"
+    },
+    {
+     "name": "record",
+     "detail": "wrote root_cause-churn-predictor to the catalog"
+    }
+   ],
+   "answer": "churn_predictor incident: train_churn_predictor is the leading upstream candidate. The leading candidate is train_churn_predictor, which is a potential cause but not confirmed. To investigate, check the train_churn_predictor job logs first for any errors or failures that may have triggered the issue on churn_predictor.",
+   "stats": {
+    "tool_calls": 2,
+    "entities_inspected": 11,
+    "prior_findings_reused": 0,
+    "input_tokens": 479,
+    "output_tokens": 60,
+    "wall_seconds": 0.92
+   },
+   "finding": {
+    "finding_id": "root_cause-churn-predictor",
+    "severity": "warning",
+    "evidence_count": 10
+   },
+   "provider": "groq"
+  }
+ },
+ "live_url": "https://github.com/Huzzzaif/datahub-steward#try-it-in-ten-seconds",
+ "demo_change": "We want to rename raw.stripe.charges.amount_cents to amount_minor_units and change its type from NUMBER to VARCHAR to support zero-decimal currencies. What breaks?",
+ "demo_symptom": "The churn_predictor model started scoring almost every customer as high-risk overnight. Nothing was deployed to the model itself. What upstream is most likely responsible?"
+}

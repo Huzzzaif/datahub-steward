@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Steward — agents that remember what they work out</title>
+<style>
+  :root{--bg:#0B0C0E;--panel:#15171A;--panel2:#1B1E22;--line:#24272B;--ink:#ECEDEE;
+        --dim:#9BA1A8;--accent:#6E9BFF;--warn:#E9A14B;--crit:#F2736B;--ok:#4ECB84;
+        --model:#C77DFF;--dash:#FFB86B;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:26px 20px 90px}
+  h1{font-size:25px;margin:0 0 6px}
+  h2{font-size:15px;margin:0 0 3px}
+  .sub{color:var(--dim);margin:0 0 8px}
+  .stakes{background:rgba(242,115,107,.09);border-left:3px solid var(--crit);
+          padding:12px 14px;border-radius:0 8px 8px 0;margin:0 0 18px;font-size:15px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+        padding:16px;margin-bottom:14px}
+  .step{display:inline-block;background:var(--accent);color:#08101F;font-weight:700;
+        font-size:11px;border-radius:5px;padding:2px 7px;margin-right:8px}
+  .toggle{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-left:auto}
+  .toggle button{background:transparent;border:0;color:var(--dim);padding:6px 12px;
+                 font:inherit;font-size:12.5px;cursor:pointer}
+  .toggle button.on{background:var(--accent);color:#08101F;font-weight:650}
+  .head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px}
+  .layer h3{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim);margin:0 0 2px}
+  .layer p{font-size:12px;color:var(--dim);margin:0 0 8px}
+  .ent{display:block;width:100%;text-align:left;background:var(--panel2);
+       border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;
+       color:var(--ink);font:inherit;font-size:13.5px;cursor:pointer;transition:background .25s,border-color .25s}
+  .ent:hover{border-color:var(--accent)}
+  .ent.sel{border-color:var(--accent);background:rgba(110,155,255,.13)}
+  .ent.hit{border-color:var(--crit);background:rgba(242,115,107,.14)}
+  .ent .t{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim)}
+  .ent.mlmodel .t{color:var(--model)} .ent.dashboard .t{color:var(--dash)}
+  .ent .own{font-size:11px;color:var(--dim);margin-top:2px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+  button.act{background:var(--accent);color:#08101F;border:0;border-radius:9px;
+             padding:9px 15px;font:inherit;font-weight:650;cursor:pointer}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line);
+               border-radius:9px;padding:9px 15px;font:inherit;cursor:pointer}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .cols{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .col{background:var(--bg);border:1px solid var(--line);border-radius:6px;
+       padding:3px 8px;font-size:12px;color:var(--dim);font-family:ui-monospace,monospace}
+  .why{border-left:2px solid var(--warn);padding-left:10px;color:var(--dim);font-size:13px;margin:10px 0}
+  .imp{display:flex;justify-content:space-between;gap:10px;padding:6px 0;
+       border-bottom:1px dashed var(--line);font-size:13.5px}
+  .imp:last-child{border-bottom:0}
+  .deg{color:var(--dim);font-size:12px}
+  .stage{display:flex;gap:10px;padding:6px 0;font-size:13.5px;border-bottom:1px dashed var(--line)}
+  .stage:last-child{border-bottom:0}
+  .stage b{color:var(--accent);min-width:78px;font-weight:600}
+  .stage span{color:var(--dim)}
+  .stats{display:flex;gap:16px;flex-wrap:wrap;color:var(--dim);font-size:12.5px;
+         margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+  .stats b{color:var(--ink)}
+  .sev{display:inline-block;font-size:10px;text-transform:uppercase;letter-spacing:.6px;
+       border-radius:5px;padding:2px 7px;margin-bottom:7px}
+  .critical{background:rgba(242,115,107,.15);color:var(--crit)}
+  .warning{background:rgba(233,161,75,.15);color:var(--warn)}
+  .info{background:rgba(110,155,255,.15);color:var(--accent)}
+  .hint{color:var(--dim);font-size:12.5px;margin-top:8px}
+  .banner{border-left:3px solid var(--ok);padding-left:11px;color:var(--dim);font-size:13px;margin-top:12px}
+  .rec{display:inline-block;background:rgba(233,161,75,.14);color:var(--warn);border-radius:5px;
+       padding:2px 8px;font-size:11px;margin-bottom:8px}
+  .answer{white-space:pre-wrap;margin:6px 0}
+  code{background:#000;padding:1px 5px;border-radius:4px;font-size:12.5px;font-family:ui-monospace,monospace}
+  .muted{color:var(--dim)}
+  a{color:var(--accent)}
+</style></head><body><div class="wrap">
+
+<h1>Steward</h1>
+<p class="sub">Agents that work out what a change would break — and write the answer
+down where the next person will find it. Built on
+<a href="https://datahubproject.io/" target="_blank" rel="noopener">DataHub</a>.</p>
+
+<p class="stakes" id="stakes"></p>
+
+<div class="card">
+  <div class="head">
+    <h2 style="margin:0"><span class="step">1</span>Meet the company</h2>
+    <div class="toggle">
+      <button id="tPlain" class="on">Plain English</button>
+      <button id="tTech">Technical</button>
+    </div>
+  </div>
+  <p class="sub" id="mapHint">Everything one online business keeps track of. Click any box
+  to see what would break if it changed.</p>
+  <div class="layers" id="layers"></div>
+</div>
+
+<div class="card" id="detail" style="display:none">
+  <h2><span class="step">2</span><span id="dname"></span></h2>
+  <p class="sub" id="ddesc"></p>
+  <div class="why" id="dwhy" style="display:none"></div>
+  <div id="dcols" class="cols"></div>
+  <div style="margin-top:14px">
+    <b id="impact-h"></b> <span class="muted" id="impact-n"></span>
+    <div id="impact" style="margin-top:6px"></div>
+  </div>
+  <div class="hint">This part is live: the map above is real lineage, walked in your
+  browser as you click. No AI involved — it's a graph lookup.</div>
+</div>
+
+<div class="card">
+  <h2><span class="step">3</span>Now watch the agents</h2>
+  <p class="sub">A graph tells you what's connected. It can't tell you which of those
+  twelve things actually matters, who to warn, or what to do. That's the agents' job.</p>
+  <div class="row">
+    <button class="act" id="rBlast">What breaks if we change the payments table?</button>
+    <button class="ghost" id="rCause">Why has the AI started behaving oddly?</button>
+    <button class="ghost" id="rAgain" disabled>Ask the same thing again</button>
+  </div>
+  <div class="hint">Ask the first question, then press "ask again" — and watch the numbers
+  at the bottom collapse. It doesn't work it out twice.</div>
+</div>
+
+<div class="card" id="out" style="display:none">
+  <h2><span class="step">4</span>What the agents did</h2>
+  <div class="rec" id="recBadge">recorded run — replayed here</div>
+  <div id="stages" style="margin-top:4px"></div>
+  <div id="result"></div>
+</div>
+
+<p class="hint">These runs were produced by the real agents against the real catalogue and
+recorded, because GitHub Pages can only serve files — it can't run Python or call a model.
+The map above is fully live. To run the agents yourself:
+<a id="liveLink" href="#" target="_blank" rel="noopener">clone and run it locally</a>.</p>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => (s||"").replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+let D = null, selected = null, plainMode = true, askedBlast = false;
+const label = (e) => plainMode ? (e.plain_name || e.name) : e.name;
+
+fetch("data.json").then(r => r.json()).then(d => {
+  D = d;
+  $("stakes").textContent = d.graph.stakes;
+  $("liveLink").href = d.live_url;
+  render();
+});
+
+function render(){
+  $("layers").innerHTML = D.graph.layers.map(l => `
+    <div class="layer">
+      <h3>${esc(plainMode ? l.plain_name : l.name)}</h3>
+      <p>${esc(plainMode ? l.plain_blurb : l.blurb)}</p>
+      ${l.entities.map(e => `
+        <button class="ent ${e.type.toLowerCase()}" data-urn="${esc(e.urn)}">
+          <div class="t">${esc(e.type)}</div>
+          <div>${esc(label(e))}</div>
+          ${e.owners.length ? `<div class="own">looked after by ${esc(e.owners.join(", "))}</div>` : ""}
+        </button>`).join("")}
+    </div>`).join("");
+  document.querySelectorAll(".ent").forEach(b => b.onclick = () => select(b.dataset.urn));
+  if(selected) select(selected);
+}
+
+function findEntity(urn){
+  for(const l of D.graph.layers) for(const e of l.entities) if(e.urn === urn) return e;
+  return null;
+}
+
+// Same breadth-first walk the Python catalogue does, so the static page and the
+// real one agree about what depends on what.
+function walk(start, dir){
+  const adj = dir === "up" ? D.adjacency.up : D.adjacency.down;
+  const seen = new Set([start]); const q = [[start, 0]]; const out = [];
+  while(q.length){
+    const [cur, depth] = q.shift();
+    for(const n of (adj[cur] || [])){
+      if(seen.has(n)) continue;
+      seen.add(n); out.push({urn:n, degree: depth+1}); q.push([n, depth+1]);
+    }
+  }
+  return out.sort((a,b) => a.degree - b.degree);
+}
+
+function select(urn){
+  selected = urn;
+  const e = findEntity(urn);
+  document.querySelectorAll(".ent").forEach(b => {
+    b.classList.toggle("sel", b.dataset.urn === urn); b.classList.remove("hit");
+  });
+  const dir = (e.type === "MLMODEL" || e.type === "DASHBOARD") ? "up" : "down";
+  const edges = walk(urn, dir);
+
+  $("detail").style.display = "block";
+  $("dname").textContent = label(e);
+  $("ddesc").textContent = plainMode ? (e.plain_description || "") : (e.description || "");
+  $("dwhy").style.display = (plainMode && e.why) ? "block" : "none";
+  $("dwhy").textContent = e.why || "";
+  $("dcols").innerHTML = plainMode ? "" :
+    (e.columns||[]).map(c => `<span class="col">${esc(c)}</span>`).join("");
+  $("impact-h").textContent = dir === "up"
+    ? (plainMode ? "This is built from" : "Upstream")
+    : (plainMode ? "Change this and these break" : "Blast radius");
+  $("impact-n").textContent = ` — ${edges.length} ${edges.length===1?"thing":"things"}`;
+  $("impact").innerHTML = edges.length ? edges.map(x => {
+      const t = findEntity(x.urn);
+      return `<div class="imp"><span>${esc(t ? label(t) : x.urn)}</span>
+        <span class="deg">${x.degree} step${x.degree===1?"":"s"} away${t && t.owners.length? " · "+esc(t.owners.join(", ")):""}</span></div>`;
+    }).join("") : `<div class="muted">Nothing — this is the end of the line.</div>`;
+
+  // Light up the affected boxes so the damage is visible on the picture.
+  const hits = new Set(edges.map(x => x.urn));
+  document.querySelectorAll(".ent").forEach(b => {
+    if(hits.has(b.dataset.urn)) b.classList.add("hit");
+  });
+}
+
+// Replays a recorded run at roughly the pace the real thing produced it, so the
+// staging reads as work happening rather than a list appearing.
+async function replay(key){
+  const run = D.runs[key]; if(!run) return;
+  ["rBlast","rCause","rAgain"].forEach(i => $(i).disabled = true);
+  $("out").style.display = "block";
+  $("stages").innerHTML = ""; $("result").innerHTML = "";
+  $("recBadge").textContent = `recorded run · ${run.provider} · ${run.stats.wall_seconds}s`;
+
+  const gap = Math.min(700, Math.max(180, (run.stats.wall_seconds * 1000) / (run.stages.length || 1)));
+  for(const st of run.stages){
+    await new Promise(r => setTimeout(r, gap));
+    $("stages").insertAdjacentHTML("beforeend",
+      `<div class="stage"><b>${esc(st.name)}</b><span>${esc(st.detail)}</span></div>`);
+  }
+
+  const f = run.finding, st = run.stats;
+  $("result").innerHTML =
+    (f ? `<div class="sev ${f.severity}">${f.severity}</div>` : "") +
+    `<p class="answer">${esc(run.answer)}</p>` +
+    (f ? `<p class="hint">Written into the catalogue as <code>${esc(f.finding_id)}</code>,
+          citing ${f.evidence_count} things it checked.</p>` : "") +
+    `<div class="stats">
+       <span><b>${st.entities_inspected}</b> things checked</span>
+       <span><b>${st.input_tokens + st.output_tokens}</b> tokens used</span>
+       <span><b>${st.prior_findings_reused}</b> earlier answers reused</span>
+       <span><b>${st.wall_seconds}s</b></span>
+     </div>` +
+    (st.prior_findings_reused > 0
+      ? `<p class="banner">It didn't work anything out this time. It read the note it left
+         in the catalogue last time and repeated it. That's the whole idea — the answer is
+         stored where the next person will trip over it.</p>` : "");
+
+  ["rBlast","rCause"].forEach(i => $(i).disabled = false);
+  $("rAgain").disabled = !askedBlast;
+}
+
+$("rBlast").onclick = () => { askedBlast = true; replay("blast_cold"); };
+$("rAgain").onclick = () => replay("blast_warm");
+$("rCause").onclick = () => replay("cause");
+$("tPlain").onclick = () => { plainMode = true;
+  $("tPlain").classList.add("on"); $("tTech").classList.remove("on");
+  $("mapHint").textContent = "Everything one online business keeps track of. Click any box to see what would break if it changed.";
+  render(); };
+$("tTech").onclick = () => { plainMode = false;
+  $("tTech").classList.add("on"); $("tPlain").classList.remove("on");
+  $("mapHint").textContent = "The real table, job and model names, as they appear in DataHub.";
+  render(); };
+</script>
+</div></body></html>

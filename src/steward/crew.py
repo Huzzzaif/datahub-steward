@@ -141,15 +141,26 @@ class _CrewBase:
         Candidates are gathered in code; the model only picks one by number, so
         it can never invent a URN that doesn't exist.
         """
+        everything = self.catalog.search("", limit=200)
+
+        # Checked first, and against the whole catalog rather than a keyword
+        # shortlist. If the question names an entity outright that is not a
+        # judgment call, and it must not be gated behind a fuzzy search that
+        # might not surface it — a keyword like "number" matching the word
+        # "numbers" in some unrelated description is enough to hide the real
+        # subject and send the whole run to the wrong entity.
+        named = _named_entity(question, everything)
+        if named is not None:
+            stats.entities_inspected += 1
+            self._emit(trace, Stage("resolve", f"named directly in the question: {named.name}"))
+            return named
+
         candidates: dict[str, Entity] = {}
         for word in _keywords(question)[:6]:
             for entity in self.catalog.search(word, limit=8):
                 candidates[entity.urn] = entity
-        if not candidates:
-            for entity in self.catalog.search("", limit=25):
-                candidates[entity.urn] = entity
 
-        options = list(candidates.values())
+        options = list(candidates.values()) or everything
         stats.entities_inspected += len(options)
         if not options:
             self._emit(trace, Stage("resolve", "no candidates found"))
@@ -157,14 +168,6 @@ class _CrewBase:
         if len(options) == 1:
             self._emit(trace, Stage("resolve", f"only candidate: {options[0].name}"))
             return options[0]
-
-        # If the question names an entity outright, that is not a judgment call
-        # and the model doesn't get a vote. Asking anyway is how a run about
-        # churn_predictor ends up filed against customer_features.
-        named = _named_entity(question, options)
-        if named is not None:
-            self._emit(trace, Stage("resolve", f"named directly in the question: {named.name}"))
-            return named
 
         listing = "\n".join(
             f"{i}. {e.name}  ({e.entity_type})" for i, e in enumerate(options)
